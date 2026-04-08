@@ -1,6 +1,7 @@
 import { createBrowserRouter } from 'react-router';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 import { WholesalerReview } from './components/admin/WholesalerReview';
+import { AdminProtected } from './components/admin/AdminProtected';
 import { StatusPending } from './components/wholesaler/StatusPending';
 import { StatusVerified } from './components/wholesaler/StatusVerified';
 import { StatusRejected } from './components/wholesaler/StatusRejected';
@@ -87,11 +88,19 @@ function StatusOnHoldPage() {
 export const router = createBrowserRouter([
   {
     path: '/',
-    Component: AdminDashboard,
+    element: (
+      <AdminProtected>
+        <AdminDashboard />
+      </AdminProtected>
+    ),
   },
   {
     path: '/review/:id',
-    Component: WholesalerReview,
+    element: (
+      <AdminProtected>
+        <WholesalerReview />
+      </AdminProtected>
+    ),
   },
   {
     path: '/status/pending',
