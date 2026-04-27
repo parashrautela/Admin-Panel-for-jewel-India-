@@ -103,6 +103,14 @@ export const router = createBrowserRouter([
     ),
   },
   {
+    path: '/review/:type/:id',
+    element: (
+      <AdminProtected>
+        <WholesalerReview />
+      </AdminProtected>
+    ),
+  },
+  {
     path: '/status/pending',
     Component: StatusPendingPage,
   },

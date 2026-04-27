@@ -3,22 +3,27 @@ import { Link, useParams, useNavigate } from 'react-router';
 import { ArrowLeft, ExternalLink, Check, Pause, RotateCcw, X, Ban, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import {
-  fetchWholesalerDetail,
-  verifyWholesaler,
-  rejectWholesaler,
-  putOnHold,
-  banWholesaler,
-  requestResubmission,
-  saveAdminNotes,
-  type WholesalerRecord,
+  fetchSubmissionDetail,
+  verifySubmission,
+  rejectSubmission,
+  putSubmissionOnHold,
+  banSubmission,
+  requestResubmissionForSubmission,
+  saveSubmissionNotes,
+  type ReviewEntity,
+  type SubmissionRecord,
   type WholesalerStatus
 } from '../../../lib/adminApi';
 
 export function WholesalerReview() {
-  const { id } = useParams();
+  const { id, type } = useParams();
   const navigate = useNavigate();
+
+  const reviewType: ReviewEntity = type === 'retailer' ? 'retailer' : 'wholesaler';
+  const subjectLabel = reviewType === 'retailer' ? 'Retailer' : 'Wholesaler';
+  const subjectLabelLower = subjectLabel.toLowerCase();
   
-  const [wholesaler, setWholesaler] = useState<WholesalerRecord | null>(null);
+  const [submission, setSubmission] = useState<SubmissionRecord | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [showResubmission, setShowResubmission] = useState(false);
@@ -33,29 +38,29 @@ export function WholesalerReview() {
   const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
-    async function loadWholesaler() {
+    async function loadSubmission() {
       if (!id) return;
       setLoading(true);
       try {
-        const data = await fetchWholesalerDetail(id);
-        setWholesaler(data);
+        const data = await fetchSubmissionDetail(reviewType, id);
+        setSubmission(data);
         setAdminNotes(data.admin_notes || '');
       } catch (err) {
         console.error(err);
-        toast.error('Failed to load wholesaler details');
+        toast.error(`Failed to load ${subjectLabelLower} details`);
       } finally {
         setLoading(false);
       }
     }
-    loadWholesaler();
-  }, [id]);
+    loadSubmission();
+  }, [id, reviewType, subjectLabelLower]);
 
   if (loading) {
-    return <div className="p-8 text-center text-gray-500">Loading Wholesaler data...</div>;
+    return <div className="p-8 text-center text-gray-500">Loading {subjectLabel} data...</div>;
   }
 
-  if (!wholesaler) {
-    return <div className="p-8 text-center text-red-500">Wholesaler not found</div>;
+  if (!submission) {
+    return <div className="p-8 text-center text-red-500">{subjectLabel} not found</div>;
   }
 
   const getStatusBadge = (status: WholesalerStatus) => {
@@ -131,7 +136,7 @@ export function WholesalerReview() {
     <div className="min-h-screen bg-white">
       <div className="max-w-7xl mx-auto px-8 py-10">
         <div className="grid grid-cols-3 gap-10">
-          {/* Left Column - Wholesaler Info */}
+          {/* Left Column - Submission Info */}
           <div className="col-span-2">
             {/* Header */}
             <Link to="/" className="inline-flex items-center gap-2 text-black hover:text-gray-600 mb-6 font-medium">
@@ -140,12 +145,12 @@ export function WholesalerReview() {
             </Link>
 
             <div className="mb-10">
-              <h1 className="text-3xl font-light mb-3">{wholesaler.full_name}</h1>
+              <h1 className="text-3xl font-light mb-3">{submission.full_name}</h1>
               <div className="flex items-center gap-4 text-sm text-gray-600">
-                <span>{new Date(wholesaler.created_at).toLocaleDateString()}</span>
+                <span>{new Date(submission.created_at).toLocaleDateString()}</span>
                 <span>•</span>
-                <span className="truncate max-w-[150px]">{wholesaler.id}</span>
-                <span className="ml-2">{getStatusBadge(wholesaler.verification_status)}</span>
+                <span className="truncate max-w-[150px]">{submission.id}</span>
+                <span className="ml-2">{getStatusBadge(submission.verification_status)}</span>
               </div>
             </div>
 
@@ -156,22 +161,22 @@ export function WholesalerReview() {
                 <div className="grid grid-cols-2 gap-6 mb-4">
                   <div>
                     <div className="text-xs text-gray-500 mb-1.5 uppercase tracking-wide">Full Name</div>
-                    <div className="font-medium text-gray-900">{wholesaler.full_name}</div>
+                    <div className="font-medium text-gray-900">{submission.full_name}</div>
                   </div>
                   <div>
                     <div className="text-xs text-gray-500 mb-1.5 uppercase tracking-wide">Aadhaar Number</div>
-                    <div className="font-medium text-gray-900">{wholesaler.aadhaar_number || 'N/A'}</div>
+                    <div className="font-medium text-gray-900">{submission.aadhaar_number || 'N/A'}</div>
                   </div>
                 </div>
                 <div>
                   <div className="text-xs text-gray-500 mb-1.5 uppercase tracking-wide">Submitted</div>
-                  <div className="font-medium text-gray-900">{new Date(wholesaler.created_at).toLocaleString()}</div>
+                  <div className="font-medium text-gray-900">{new Date(submission.created_at).toLocaleString()}</div>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-5">
-                <DocumentCard url={wholesaler.aadhaar_front_url} label="Aadhaar Front" />
-                <DocumentCard url={wholesaler.aadhaar_back_url} label="Aadhaar Back" />
+                <DocumentCard url={submission.aadhaar_front_url} label="Aadhaar Front" />
+                <DocumentCard url={submission.aadhaar_back_url} label="Aadhaar Back" />
               </div>
             </div>
 
@@ -182,32 +187,32 @@ export function WholesalerReview() {
                 <div className="grid grid-cols-2 gap-6 mb-4">
                   <div>
                     <div className="text-xs text-gray-500 mb-1.5 uppercase tracking-wide">Business Name</div>
-                    <div className="font-medium text-gray-900">{wholesaler.business_name}</div>
+                    <div className="font-medium text-gray-900">{submission.business_name}</div>
                   </div>
                   <div>
                     <div className="text-xs text-gray-500 mb-1.5 uppercase tracking-wide">State</div>
-                    <div className="font-medium text-gray-900">{wholesaler.state}</div>
+                    <div className="font-medium text-gray-900">{submission.state}</div>
                   </div>
                 </div>
                 <div>
                   <div className="text-xs text-gray-500 mb-1.5 uppercase tracking-wide">City</div>
-                  <div className="font-medium text-gray-900">{wholesaler.city}</div>
+                  <div className="font-medium text-gray-900">{submission.city}</div>
                 </div>
               </div>
 
               <div>
                 <div className="text-xs text-gray-500 mb-3 uppercase tracking-wide">Business Logo</div>
-                {wholesaler.business_logo_url ? (
+                {submission.business_logo_url ? (
                   <div className="flex flex-col items-start gap-3">
-                    <img src={wholesaler.business_logo_url} className="w-16 h-16 rounded-full object-cover border" alt="Logo" />
-                    <a href={wholesaler.business_logo_url} target="_blank" rel="noopener noreferrer" className="text-black text-sm flex items-center gap-1.5 hover:text-gray-600 font-medium">
+                    <img src={submission.business_logo_url} className="w-16 h-16 rounded-full object-cover border" alt="Logo" />
+                    <a href={submission.business_logo_url} target="_blank" rel="noopener noreferrer" className="text-black text-sm flex items-center gap-1.5 hover:text-gray-600 font-medium">
                       <ExternalLink className="w-4 h-4" />
                       View full size
                     </a>
                   </div>
                 ) : (
                   <div className="w-16 h-16 bg-gray-900 rounded-full flex items-center justify-center text-white text-xl font-medium">
-                    {wholesaler.full_name?.charAt(0).toUpperCase()}
+                    {submission.full_name?.charAt(0).toUpperCase()}
                   </div>
                 )}
               </div>
@@ -217,8 +222,8 @@ export function WholesalerReview() {
             <div className="bg-white rounded-lg border border-gray-100 shadow-sm p-8">
               <h2 className="text-lg font-medium mb-6">Verification Documents</h2>
               <div className="grid grid-cols-2 gap-5">
-                <DocumentCard url={wholesaler.pan_card_url} label="PAN Card" />
-                <DocumentCard url={wholesaler.gst_certificate_url} label="GST Certificate" />
+                <DocumentCard url={submission.pan_card_url} label="PAN Card" />
+                <DocumentCard url={submission.gst_certificate_url} label="GST Certificate" />
               </div>
             </div>
           </div>
@@ -233,19 +238,19 @@ export function WholesalerReview() {
                 {/* Verify & Approve */}
                 <div>
                   <button 
-                    onClick={() => wrapAction(() => verifyWholesaler(wholesaler.id))}
+                    onClick={() => wrapAction(() => verifySubmission(reviewType, submission.id))}
                     className="w-full bg-black hover:bg-gray-800 text-white py-3.5 px-4 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
                   >
                     <Check className="w-5 h-5" />
                     Verify & Approve
                   </button>
-                  <p className="text-xs text-gray-500 mt-2 px-1">Wholesaler gets immediate access</p>
+                  <p className="text-xs text-gray-500 mt-2 px-1">{subjectLabel} gets immediate access</p>
                 </div>
 
                 {/* Put On Hold */}
                 <div>
                   <button 
-                    onClick={() => wrapAction(() => putOnHold(wholesaler.id, adminNotes))}
+                    onClick={() => wrapAction(() => putSubmissionOnHold(reviewType, submission.id, adminNotes))}
                     className="w-full border border-gray-300 text-gray-900 hover:bg-gray-50 py-3.5 px-4 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
                   >
                     <Pause className="w-5 h-5" />
@@ -292,7 +297,7 @@ export function WholesalerReview() {
                         rows={3}
                       />
                       <button 
-                        onClick={() => wrapAction(() => requestResubmission(wholesaler.id, selectedDocuments, resubmissionReason))}
+                        onClick={() => wrapAction(() => requestResubmissionForSubmission(reviewType, submission.id, selectedDocuments, resubmissionReason))}
                         disabled={!resubmissionReason || selectedDocuments.length === 0}
                         className="w-full mt-4 bg-black hover:bg-gray-800 text-white py-2.5 px-4 rounded-lg font-medium text-sm disabled:opacity-50"
                       >
@@ -352,7 +357,7 @@ export function WholesalerReview() {
                         rows={3}
                       />
                       <button 
-                        onClick={() => wrapAction(() => rejectWholesaler(wholesaler.id, rejectionReason + (rejectionNotes ? ` - ${rejectionNotes}` : '')))}
+                        onClick={() => wrapAction(() => rejectSubmission(reviewType, submission.id, rejectionReason + (rejectionNotes ? ` - ${rejectionNotes}` : '')))}
                         disabled={!rejectionReason}
                         className="w-full mt-4 bg-black hover:bg-gray-800 text-white py-2.5 px-4 rounded-lg font-medium text-sm disabled:opacity-50"
                       >
@@ -381,7 +386,7 @@ export function WholesalerReview() {
                   <textarea
                     value={adminNotes}
                     onChange={(e) => setAdminNotes(e.target.value)}
-                    placeholder="Add notes (not visible to wholesaler)..."
+                    placeholder={`Add notes (not visible to ${subjectLabelLower})...`}
                     className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm resize-none focus:outline-none focus:ring-2 focus:ring-black bg-gray-50"
                     rows={4}
                   />
@@ -389,7 +394,7 @@ export function WholesalerReview() {
                     onClick={async () => {
                       setActionLoading(true);
                       try {
-                        await saveAdminNotes(wholesaler.id, adminNotes);
+                        await saveSubmissionNotes(reviewType, submission.id, adminNotes);
                         toast.success("Notes saved");
                       } catch (err: any) {
                         toast.error("Failed to save notes");
@@ -419,7 +424,7 @@ export function WholesalerReview() {
               <div>
                 <h3 className="text-xl font-medium mb-2">Are you sure?</h3>
                 <p className="text-sm text-gray-600 leading-relaxed">
-                  This will permanently ban {wholesaler.full_name} from the platform. This action cannot be undone.
+                  This will permanently ban {submission.full_name} from the platform. This action cannot be undone.
                 </p>
               </div>
             </div>
@@ -431,7 +436,7 @@ export function WholesalerReview() {
                 Cancel
               </button>
               <button
-                onClick={() => wrapAction(() => banWholesaler(wholesaler.id))}
+                onClick={() => wrapAction(() => banSubmission(reviewType, submission.id))}
                 className="flex-1 px-4 py-3 bg-black text-white rounded-lg font-medium hover:bg-gray-800 transition-colors"
                 disabled={actionLoading}
               >
