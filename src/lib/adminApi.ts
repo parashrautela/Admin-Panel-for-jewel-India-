@@ -16,7 +16,7 @@ export interface WholesalerRecord {
   state: string;
   verification_status: WholesalerStatus;
   created_at: string;
-  aadhaar_number: string;
+  aadhar_number: string;
   aadhaar_front_url: string;
   aadhaar_back_url: string;
   business_logo_url: string;
@@ -43,7 +43,7 @@ function getEntityTable(entity: ReviewEntity) {
  * The PRD specifies counts for 'pending', 'on_hold', 'verified', 'banned'.
  */
 export async function fetchStatusCounts(entity: ReviewEntity = 'wholesaler') {
-  const statuses = ['pending', 'on_hold', 'verified', 'banned'] as const;
+  const statuses = ['pending', 'on_hold', 'verified', 'rejected', 'resubmission_required', 'banned'] as const;
   const table = getEntityTable(entity);
   
   const counts = await Promise.all(
@@ -71,7 +71,7 @@ export async function fetchWholesalers(
   statusFilter: string = 'all',
   searchQuery: string = '',
   page: number = 1,
-  pageSize: number = 20
+  pageSize?: number
 ) {
   return fetchSubmissions('wholesaler', statusFilter, searchQuery, page, pageSize);
 }
@@ -80,7 +80,7 @@ export async function fetchRetailers(
   statusFilter: string = 'all',
   searchQuery: string = '',
   page: number = 1,
-  pageSize: number = 20
+  pageSize?: number
 ) {
   return fetchSubmissions('retailer', statusFilter, searchQuery, page, pageSize);
 }
@@ -90,7 +90,7 @@ export async function fetchSubmissions(
   statusFilter: string = 'all',
   searchQuery: string = '',
   page: number = 1,
-  pageSize: number = 20
+  pageSize?: number
 ) {
   const table = getEntityTable(entity);
   let query = supabase
@@ -104,8 +104,11 @@ export async function fetchSubmissions(
       created_at,
       verification_status
     `, { count: 'exact' })
-    .order('created_at', { ascending: false })
-    .range((page - 1) * pageSize, page * pageSize - 1);
+    .order('created_at', { ascending: false });
+
+  if (pageSize && pageSize > 0) {
+    query = query.range((page - 1) * pageSize, page * pageSize - 1);
+  }
 
   if (statusFilter !== 'all') {
     query = query.eq('verification_status', statusFilter);

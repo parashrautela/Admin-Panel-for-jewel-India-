@@ -62,7 +62,7 @@ export async function saveStep1(
   const { error } = await supabase.from('wholesalers').upsert({
     id: userId,
     full_name: fullName,
-    aadhaar_number: aadhaarNumber,
+    aadhar_number: aadhaarNumber,
     aadhaar_front_url: frontUrl,
     aadhaar_back_url: backUrl,
     verification_status: 'pending',

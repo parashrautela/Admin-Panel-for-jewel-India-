@@ -165,7 +165,7 @@ export function WholesalerReview() {
                   </div>
                   <div>
                     <div className="text-xs text-gray-500 mb-1.5 uppercase tracking-wide">Aadhaar Number</div>
-                    <div className="font-medium text-gray-900">{submission.aadhaar_number || 'N/A'}</div>
+                    <div className="font-medium text-gray-900">{submission.aadhar_number || 'N/A'}</div>
                   </div>
                 </div>
                 <div>

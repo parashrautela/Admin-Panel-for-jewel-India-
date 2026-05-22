@@ -30,7 +30,7 @@ export function AdminDashboard() {
         const counts = await fetchStatusCounts(selectedEntity);
         setStatusCounts({ ...DEFAULT_STATUS_COUNTS, ...counts });
 
-        const { data } = await fetchSubmissions(selectedEntity, selectedFilter, searchQuery, 1, 50);
+        const { data } = await fetchSubmissions(selectedEntity, selectedFilter, searchQuery);
         setSubmissions(data as SubmissionRecord[]);
       } catch (err) {
         console.error("Failed to fetch dashboard data:", err);
@@ -150,7 +150,7 @@ export function AdminDashboard() {
 
         {/* Filter Bar */}
         <div className="flex gap-3 mb-8 flex-wrap">
-          {['all', 'pending', 'on_hold', 'verified', 'rejected', 'banned'].map((filter) => (
+          {['all', 'pending', 'on_hold', 'verified', 'rejected', 'resubmission_required', 'banned'].map((filter) => (
             <button
               key={filter}
               onClick={() => setSelectedFilter(filter as WholesalerStatus | 'all')}

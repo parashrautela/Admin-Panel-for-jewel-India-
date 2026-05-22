@@ -5,7 +5,7 @@
 create table wholesalers (
   id uuid default gen_random_uuid() primary key,
   full_name text not null,
-  aadhaar_number text,
+  aadhar_number text,
   aadhaar_front_url text,
   aadhaar_back_url text,
   business_name text,
