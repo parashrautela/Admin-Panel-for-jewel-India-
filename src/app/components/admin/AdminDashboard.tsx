@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router';
-import { Search, User } from 'lucide-react';
+import { Search, User, ExternalLink } from 'lucide-react';
 import { fetchSubmissions, fetchStatusCounts, type ReviewEntity, type WholesalerStatus, type SubmissionRecord } from '../../../lib/adminApi';
+import nanoBananaLogo from '../../../assets/nano-banana-logo.png';
 
 const DEFAULT_STATUS_COUNTS = {
   pending: 0,
@@ -19,6 +20,9 @@ export function AdminDashboard() {
   const [submissions, setSubmissions] = useState<SubmissionRecord[]>([]);
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>(DEFAULT_STATUS_COUNTS);
   const [loading, setLoading] = useState(true);
+  const [showApiPanel, setShowApiPanel] = useState(false);
+
+  const activeTab = showApiPanel ? 'api_backend' : selectedEntity;
 
   const entityLabel = selectedEntity === 'retailer' ? 'Retailer' : 'Wholesaler';
   const entityLabelLower = entityLabel.toLowerCase();
@@ -93,6 +97,7 @@ export function AdminDashboard() {
       {/* Main Content */}
       <div className="max-w-7xl mx-auto px-8 py-10">
         {/* Stats Row */}
+        {!showApiPanel && (
         <div className="grid grid-cols-4 gap-6 mb-12">
           <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
             <div className="text-4xl font-light mb-2">{statusCounts.pending || 0}</div>
@@ -111,29 +116,99 @@ export function AdminDashboard() {
             <div className="text-sm text-gray-600">Banned</div>
           </div>
         </div>
+        )}
 
         <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
-          <h1 className="text-3xl font-light">{entityLabel} submissions</h1>
+          <h1 className="text-3xl font-light">{showApiPanel ? 'API Keys & Backend' : entityLabel + ' submissions'}</h1>
           <div className="flex items-center bg-gray-100 rounded-full p-1">
             {[
               { value: 'wholesaler', label: 'Wholesalers' },
-              { value: 'retailer', label: 'Retailers' }
-            ].map((entity) => (
+              { value: 'retailer', label: 'Retailers' },
+              { value: 'api_backend', label: 'API Key & Backend' }
+            ].map((tab) => (
               <button
-                key={entity.value}
-                onClick={() => setSelectedEntity(entity.value as ReviewEntity)}
+                key={tab.value}
+                onClick={() => {
+                  if (tab.value === 'api_backend') {
+                    setShowApiPanel(true);
+                  } else {
+                    setShowApiPanel(false);
+                    setSelectedEntity(tab.value as ReviewEntity);
+                  }
+                }}
                 className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
-                  selectedEntity === entity.value
+                  activeTab === tab.value
                     ? 'bg-black text-white'
                     : 'text-gray-700 hover:bg-gray-200'
                 }`}
               >
-                {entity.label}
+                {tab.label}
               </button>
             ))}
           </div>
         </div>
 
+        {showApiPanel ? (
+          <div>
+            <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-gray-100">
+                    <th className="text-left px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Service</th>
+                    <th className="text-left px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
+                    <th className="text-left px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                    <th className="text-left px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {[
+                    { name: 'Supabase', description: 'Database, Authentication & Storage', url: 'https://supabase.com/', initial: 'S', logoUrl: 'https://cdn.simpleicons.org/supabase/3FCF8E', cover: false },
+                    { name: 'Railway', description: 'Backend Infrastructure & Deployment', url: 'https://railway.com/dashboard', initial: 'R', logoUrl: 'https://cdn.simpleicons.org/railway/0B0D0E', cover: false },
+                    { name: 'Vercel', description: 'Frontend Hosting & Edge Network', url: 'https://vercel.com/', initial: 'V', logoUrl: 'https://cdn.simpleicons.org/vercel/000000', cover: false },
+                    { name: 'Nano Banana', description: 'Service Integration', url: 'https://nanobananaapi.ai/dashboard', initial: 'N', logoUrl: nanoBananaLogo, cover: true },
+                  ].map((service) => (
+                    <tr key={service.name} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-6 py-5">
+                        <div className="flex items-center gap-3">
+                          {service.logoUrl ? (
+                            <div className={`w-10 h-10 rounded-full overflow-hidden flex items-center justify-center flex-shrink-0 ${service.cover ? 'bg-gray-100' : 'bg-white border border-gray-200 p-2'}`}>
+                              <img src={service.logoUrl} alt={service.name} className={service.cover ? 'w-full h-full object-cover' : 'w-5 h-5 object-contain'} />
+                            </div>
+                          ) : (
+                            <div className="w-10 h-10 bg-gray-900 rounded-full flex items-center justify-center text-white text-sm font-medium flex-shrink-0">
+                              {service.initial}
+                            </div>
+                          )}
+                          <span className="font-medium">{service.name}</span>
+                        </div>
+                      </td>
+                      <td className="px-6 py-5 text-gray-600 text-sm">{service.description}</td>
+                      <td className="px-6 py-5">
+                        {service.url === '#' ? (
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-900">Not configured</span>
+                        ) : (
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-black text-white">Active</span>
+                        )}
+                      </td>
+                      <td className="px-6 py-5">
+                        <a
+                          href={service.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-black hover:text-gray-600 font-medium text-sm transition-colors inline-flex items-center gap-1.5"
+                        >
+                          Open
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </a>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : (
+        <>
         {/* Search Bar */}
         <div className="mb-6">
           <div className="relative max-w-md">
@@ -220,6 +295,8 @@ export function AdminDashboard() {
             </tbody>
           </table>
         </div>
+        </>
+        )}
       </div>
     </div>
   );
