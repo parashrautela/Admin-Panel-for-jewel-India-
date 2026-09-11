@@ -38,6 +38,35 @@ export function creditsForTotal(totalPaise: number, creditsPerRupee: number): nu
   return Math.floor((taxablePaise * creditsPerRupee) / 100)
 }
 
+/**
+ * A wholesaler may also type their own amount instead of picking a pack.
+ * Whole rupees, excluding GST. ₹1 is deliberately allowed: it makes a real
+ * ₹1.18 payment possible for testing.
+ */
+export const CUSTOM_AMOUNT = { key: 'custom', minInr: 1, maxInr: 100_000 } as const
+
+/** A typed amount → the same shape as a pack, or null if it isn't usable. */
+export function customOption(amountExGstInr: unknown, creditsPerRupee: number): TopUpOption | null {
+  const amount = typeof amountExGstInr === 'number' ? amountExGstInr : Number(amountExGstInr)
+  if (!Number.isSafeInteger(amount)) return null
+  if (amount < CUSTOM_AMOUNT.minInr || amount > CUSTOM_AMOUNT.maxInr) return null
+
+  const totalPaise = totalPaiseFor(amount)
+  const split = splitGstInclusive(totalPaise)
+  const credits = creditsForTotal(totalPaise, creditsPerRupee)
+  if (credits <= 0) return null
+
+  return {
+    key: CUSTOM_AMOUNT.key,
+    label: 'Custom',
+    price_inr: split.amountInr,
+    gst_inr: split.gstInr,
+    total_inr: split.paidInr,
+    total_paise: totalPaise,
+    credits,
+  }
+}
+
 /** Active, priced packs → what the app offers, in the order given. */
 export function buildOptions(packs: Pack[], creditsPerRupee: number): TopUpOption[] {
   return packs

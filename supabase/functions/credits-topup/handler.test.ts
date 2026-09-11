@@ -54,6 +54,7 @@ test('options: packs priced with GST and the credits they buy', async () => {
     ok: true,
     credits_per_rupee: 10,
     gst_percent: 18,
+    custom: { min_inr: 1, max_inr: 100_000 },
     packs: [
       { key: 'starter', label: 'Starter', price_inr: 500, gst_inr: 90, total_inr: 590, total_paise: 59_000, credits: 5_000 },
       { key: 'popular', label: 'Popular', price_inr: 1000, gst_inr: 180, total_inr: 1180, total_paise: 118_000, credits: 10_000 },
@@ -103,6 +104,37 @@ test('create: the body cannot pick the wallet, the amount or the credits', async
   const { body } = f.links[0]
   assert.equal(body.amount, 59_000)
   assert.deepEqual(body.notes, { wholesaler_id: 'alice-uid', pack: 'starter', source: 'app' })
+})
+
+test('options tell the app the custom amount it may accept', async () => {
+  const reply = await call(fake(), { action: 'options' })
+  assert.deepEqual(reply.body.custom, { min_inr: 1, max_inr: 100_000 })
+})
+
+test('create: a typed amount makes a link for exactly that amount', async () => {
+  const f = fake()
+  const reply = await call(f, { action: 'create', pack_key: 'custom', amount_inr: 1 })
+  assert.equal(reply.status, 200)
+  assert.equal(reply.body.pack_key, 'custom')
+  assert.equal(reply.body.total_inr, 1.18)
+  assert.equal(reply.body.credits, 10)
+  assert.equal(f.links[0].body.amount, 118)
+  assert.deepEqual(f.links[0].body.notes, { wholesaler_id: 'alice-uid', pack: 'custom', source: 'app' })
+})
+
+test('create: an amount with no pack_key is treated as custom', async () => {
+  const f = fake()
+  assert.equal((await call(f, { action: 'create', amount_inr: 2000 })).body.total_inr, 2360)
+})
+
+test('create: a bad typed amount is refused before Razorpay is called', async () => {
+  for (const amount_inr of [0, -1, 0.5, 100_001, 'lots', null, undefined]) {
+    const f = fake()
+    const reply = await call(f, { action: 'create', pack_key: 'custom', amount_inr })
+    assert.equal(reply.status, 400, String(amount_inr))
+    assert.equal(reply.body.error, 'invalid_amount')
+    assert.equal(f.links.length, 0)
+  }
 })
 
 test('create: an unknown or inactive pack is refused before Razorpay is called', async () => {

@@ -16,8 +16,11 @@ Both are `POST` with the signed-in user's Supabase JWT. The app's Supabase clien
 
 | Body | Returns |
 |---|---|
-| `{"action":"options"}` | `{ok, credits_per_rupee, gst_percent, packs:[{key, label, price_inr, gst_inr, total_inr, total_paise, credits}]}` |
+| `{"action":"options"}` | `{ok, credits_per_rupee, gst_percent, custom:{min_inr, max_inr}, packs:[{key, label, price_inr, gst_inr, total_inr, total_paise, credits}]}` |
 | `{"action":"create","pack_key":"starter"}` | `{ok, link_id, url, pack_key, total_inr, credits, expires_at}` |
+| `{"action":"create","pack_key":"custom","amount_inr":750}` | the same, for an amount the wholesaler typed |
+
+`amount_inr` is whole rupees **excluding** GST, between `min_inr` and `max_inr`. ₹1 is allowed deliberately: it makes a real ₹1.18 payment usable as a live test.
 
 Errors come back as `{ok:false, error, message}`. `message` is safe to show the user.
 

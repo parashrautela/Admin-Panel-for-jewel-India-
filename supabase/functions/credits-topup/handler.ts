@@ -3,7 +3,7 @@
 // Node, and index.ts only wires the real services in.
 
 import { GST_RATE_PERCENT, parseRate, type Pack } from '../razorpay-webhook/lib.ts'
-import { buildOptions, paymentLinkBody } from './lib.ts'
+import { CUSTOM_AMOUNT, buildOptions, customOption, paymentLinkBody } from './lib.ts'
 
 export interface AuthUser {
   id: string
@@ -84,14 +84,27 @@ export async function handleTopUp(
   if (body.action === 'options') {
     return {
       status: 200,
-      body: { ok: true, credits_per_rupee: rate, gst_percent: GST_RATE_PERCENT, packs: options },
+      body: {
+        ok: true,
+        credits_per_rupee: rate,
+        gst_percent: GST_RATE_PERCENT,
+        packs: options,
+        custom: { min_inr: CUSTOM_AMOUNT.minInr, max_inr: CUSTOM_AMOUNT.maxInr },
+      },
     }
   }
   if (body.action !== 'create') return fail(400, 'unknown_action', 'Unknown action.')
 
-  // Price and credits come from the server's pack list; the app only names a pack.
-  const option = options.find((o) => o.key === body.pack_key)
-  if (!option) return fail(400, 'unknown_pack', 'That pack is no longer available. Please reopen Top Up.')
+  // Price and credits are worked out here: the app either names a pack or
+  // types an amount, and never sends money or credit figures of its own.
+  const option = body.pack_key === CUSTOM_AMOUNT.key || body.pack_key === undefined
+    ? customOption(body.amount_inr, rate)
+    : options.find((o) => o.key === body.pack_key)
+  if (!option) {
+    return body.pack_key === CUSTOM_AMOUNT.key || body.pack_key === undefined
+      ? fail(400, 'invalid_amount', `Enter a whole amount between ₹${CUSTOM_AMOUNT.minInr} and ₹${CUSTOM_AMOUNT.maxInr.toLocaleString('en-IN')}.`)
+      : fail(400, 'unknown_pack', 'That pack is no longer available. Please reopen Top Up.')
+  }
 
   const keyId = deps.env('RAZORPAY_KEY_ID').trim()
   const keySecret = deps.env('RAZORPAY_KEY_SECRET').trim()

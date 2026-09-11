@@ -3,9 +3,11 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+  CUSTOM_AMOUNT,
   LINK_LIFETIME_SECONDS,
   buildOptions,
   creditsForTotal,
+  customOption,
   paymentLinkBody,
   totalPaiseFor,
 } from './lib.ts'
@@ -71,6 +73,38 @@ test('buildOptions: a blank label falls back to the key', () => {
 
 test('buildOptions: a pack too small to buy a credit is not offered', () => {
   assert.deepEqual(buildOptions([pack('tiny', 0.01)], 10), [])
+})
+
+test('customOption: a typed amount is priced like a pack', () => {
+  assert.deepEqual(customOption(500, 10), {
+    key: 'custom', label: 'Custom',
+    price_inr: 500, gst_inr: 90, total_inr: 590, total_paise: 59_000, credits: 5_000,
+  })
+  // ₹1 is allowed on purpose: a real ₹1.18 payment can be used as a test.
+  assert.deepEqual(customOption(1, 10), {
+    key: 'custom', label: 'Custom',
+    price_inr: 1, gst_inr: 0.18, total_inr: 1.18, total_paise: 118, credits: 10,
+  })
+  assert.equal(customOption(CUSTOM_AMOUNT.maxInr, 10)?.credits, CUSTOM_AMOUNT.maxInr * 10)
+})
+
+test('customOption: refuses anything that is not whole rupees in range', () => {
+  for (const bad of [0, -5, 0.5, 1.01, 100_001, NaN, Infinity, null, undefined, '', 'abc', {}, [], '12abc']) {
+    assert.equal(customOption(bad as never, 10), null, String(bad))
+  }
+  // A numeric string is still a number the user could have typed.
+  assert.equal(customOption('250', 10)?.total_inr, 295)
+})
+
+test('a typed amount also gets exactly what the webhook grants', () => {
+  for (const rate of [1, 2.5, 10, 12]) {
+    for (const amount of [1, 3, 7, 99, 500, 1234, 99_999]) {
+      const option = customOption(amount, rate)!
+      const granted = decideCredits({}, option.total_paise, rate, [])
+      assert.ok(granted.ok, `₹${amount} at ${rate}`)
+      assert.equal(option.credits, granted.credits, `₹${amount} at ${rate}`)
+    }
+  }
 })
 
 test('paymentLinkBody: amount, lifetime, and the notes the webhook reads', () => {
