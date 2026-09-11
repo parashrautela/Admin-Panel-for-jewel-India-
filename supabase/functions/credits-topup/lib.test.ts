@@ -80,7 +80,7 @@ test('paymentLinkBody: amount, lifetime, and the notes the webhook reads', () =>
     amount: 59_000,
     currency: 'INR',
     accept_partial: false,
-    description: 'Jewel India credits: 5,000 coins',
+    description: 'Jewel India: 5,000 credits',
     customer: { name: 'Parash Jewellers', email: 'a@b.com', contact: '+919876543210' },
     notify: { sms: false, email: false },
     reminder_enable: false,

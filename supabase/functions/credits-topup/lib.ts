@@ -87,7 +87,7 @@ export function paymentLinkBody(option: TopUpOption, buyer: Buyer, nowSeconds: n
     amount: option.total_paise,
     currency: 'INR',
     accept_partial: false,
-    description: `Jewel India credits: ${option.credits.toLocaleString('en-IN')} coins`,
+    description: `Jewel India: ${option.credits.toLocaleString('en-IN')} credits`,
     ...(Object.keys(customer).length > 0 ? { customer } : {}),
     notify: { sms: false, email: false },
     reminder_enable: false,
