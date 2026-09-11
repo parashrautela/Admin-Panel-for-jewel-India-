@@ -5,9 +5,10 @@
 // internet and free credits. Deploy/config steps: README.md next to this file.
 //
 // Route A (TREASURE_CHEST_BUILD_PLAN.md §3.2): the Jewel India team creates the
-// Payment Link by hand in the Razorpay Dashboard, with notes such as
-//   wholesaler_id = <uuid>   pack = pro        (or credits = 650 for a deal)
-// and this function reads them back when Razorpay reports the link paid.
+// Payment Link by hand in the Razorpay Dashboard with a note
+//   wholesaler_id = <uuid>            (and optionally credits = N for a deal)
+// and this function reads it back when Razorpay reports the link paid. The
+// credits granted are the amount paid, excluding GST, × CREDITS_PER_RUPEE.
 //
 // Every paid payment ends in exactly one of:
 //   • credits granted                       → 200
@@ -22,7 +23,6 @@ import { serve } from "https://deno.land/std@0.177.0/http/server.ts"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2"
 import {
   GST_RATE_PERCENT,
-  checkPaidAgainstList,
   decideCredits,
   decideWholesaler,
   eventNameOf,
@@ -30,6 +30,7 @@ import {
   maskPhone,
   normalizeEmail,
   normalizeIndianMobile,
+  parseRate,
   purchaseFromPaymentLinkPaid,
   splitGstInclusive,
   verifyRazorpaySignature,
@@ -66,6 +67,8 @@ interface Context {
   eventName: string
   eventId: string | null
   supabase: SupabaseClient
+  /** CREDITS_PER_RUPEE: credits per ₹1 of the amount paid, excluding GST. */
+  creditsPerRupee: number
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -92,6 +95,14 @@ serve(async (req: Request) => {
     // A deploy mistake, not a bad request: 500 so Razorpay keeps retrying
     // until the secret is set, instead of the payment being acknowledged.
     log('error', 'RAZORPAY_WEBHOOK_SECRET is not set — refusing to process webhooks')
+    return json({ error: 'Webhook not configured' }, 500)
+  }
+
+  // Same reasoning: without the rate there is no right number of credits to
+  // grant, and guessing is worse than Razorpay retrying until it is set.
+  const creditsPerRupee = parseRate(env('CREDITS_PER_RUPEE'))
+  if (!creditsPerRupee) {
+    log('error', 'CREDITS_PER_RUPEE is not set to a positive number — refusing to process webhooks')
     return json({ error: 'Webhook not configured' }, 500)
   }
 
@@ -128,7 +139,7 @@ serve(async (req: Request) => {
   })
 
   try {
-    return await handler({ event, eventName, eventId, supabase })
+    return await handler({ event, eventName, eventId, supabase, creditsPerRupee })
   } catch (err) {
     // Transient (database unreachable, etc.). Razorpay retries non-2xx
     // deliveries, and the payment-id dedupe makes a retry harmless.
@@ -181,32 +192,22 @@ async function settle(ctx: Context, parsed: PaidPurchase | { error: string }): P
     return manual(ctx, p.paymentId, p.providerRef, who.reason)
   }
 
-  // How many credits.
+  // How many credits: from the amount paid (packs only label the purchase).
   const { data: packs, error: packsError } = await ctx.supabase
     .from('credit_packs')
     .select('key, label, credits, price_inr_ex_gst, active')
   if (packsError) throw new Error(`credit_packs: ${packsError.message}`)
 
-  const credits = decideCredits(p.notes, (packs ?? []) as Pack[])
+  const credits = decideCredits(p.notes, p.amountPaidPaise, ctx.creditsPerRupee, (packs ?? []) as Pack[])
   if (!credits.ok) return manual(ctx, p.paymentId, p.providerRef, credits.reason)
-
-  // A hand-typed pack or credit count on the wrong link: far too many credits
-  // for what was paid. A human confirms before anything is granted.
-  const priceCheck = checkPaidAgainstList(credits, (packs ?? []) as Pack[], p.amountPaidPaise)
-  if (!priceCheck.ok) return manual(ctx, p.paymentId, p.providerRef, priceCheck.reason)
+  if (credits.credits !== credits.fromAmount) {
+    // A special deal set by the team — leave a trail for accounting.
+    log('info', 'Credits note overrides the amount-derived credits', {
+      ...base, credits: credits.credits, from_amount: credits.fromAmount,
+    })
+  }
 
   const money = splitGstInclusive(p.amountPaidPaise)
-  if (credits.pack) {
-    const listPaise = Math.round(Number(credits.pack.price_inr_ex_gst) * 100)
-    const expectedPaise = Math.round((listPaise * (100 + GST_RATE_PERCENT)) / 100)
-    if (Math.abs(expectedPaise - p.amountPaidPaise) > 100) {
-      // A discount above the floor checked earlier still grants — but leave
-      // a trail for accounting.
-      log('warn', 'Amount paid differs from the pack list price', {
-        ...base, pack: credits.packKey, paid_paise: p.amountPaidPaise, expected_paise: expectedPaise,
-      })
-    }
-  }
 
   // Grant — the purchase row and the credits in one transaction, deduped on
   // the Razorpay payment id.
@@ -231,6 +232,8 @@ async function settle(ctx: Context, parsed: PaidPurchase | { error: string }): P
       amount_paid_paise: p.amountPaidPaise,
       amount_paid_inr: money.paidInr,
       gst_inclusive_rate_percent: GST_RATE_PERCENT,
+      credits_per_rupee: ctx.creditsPerRupee,
+      credits_from_amount: credits.fromAmount,
       matched_on: who.matchedOn,
       notes: p.notes,
       customer: p.customer,

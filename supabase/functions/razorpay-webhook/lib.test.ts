@@ -8,8 +8,6 @@ import assert from 'node:assert/strict'
 import { createHmac } from 'node:crypto'
 
 import {
-  MAX_CUSTOM_CREDITS,
-  checkPaidAgainstList,
   decideCredits,
   decideWholesaler,
   eventNameOf,
@@ -18,6 +16,7 @@ import {
   normalizeIndianMobile,
   notesOf,
   parseCredits,
+  parseRate,
   purchaseFromPaymentLinkPaid,
   splitGstInclusive,
   verifyRazorpaySignature,
@@ -214,64 +213,87 @@ test('nobody matching goes to a human', () => {
 
 // ── how many credits ─────────────────────────────────────────────────────────
 
+// Packs under the live pricing (10 credits per ₹1): credits = price × 10.
+// They only label a purchase now; the amount paid decides the credits.
+const RATE = 10
 const PACKS: Pack[] = [
-  { key: 'starter', label: 'Starter', credits: 50, price_inr_ex_gst: '499.00', active: true },
-  { key: 'popular', label: 'Popular', credits: 220, price_inr_ex_gst: '1999.00', active: true },
-  { key: 'pro', label: 'Pro', credits: 600, price_inr_ex_gst: '4999.00', active: true },
-  { key: 'bulk', label: 'Bulk', credits: 1300, price_inr_ex_gst: '9999.00', active: true },
+  { key: 'starter', label: 'Starter', credits: 4990, price_inr_ex_gst: '499.00', active: true },
+  { key: 'popular', label: 'Popular', credits: 19990, price_inr_ex_gst: '1999.00', active: true },
+  { key: 'pro', label: 'Pro', credits: 49990, price_inr_ex_gst: '4999.00', active: true },
+  { key: 'bulk', label: 'Bulk', credits: 99990, price_inr_ex_gst: '9999.00', active: true },
   { key: 'retired', label: 'Retired', credits: 999, price_inr_ex_gst: '1.00', active: false },
 ]
+const paise = (inclGstRupees: number) => Math.round(inclGstRupees * 100)
 
-test('a pack key grants that pack', () => {
-  const r = decideCredits({ pack: 'pro' }, PACKS)
-  assert.ok(r.ok && r.credits === 600 && r.packKey === 'pro')
+test('credits = amount paid excluding GST × the rate', () => {
+  // ₹590 incl. GST = ₹500 + ₹90 GST → 5,000 credits.
+  const r = decideCredits({}, paise(590), RATE, PACKS)
+  assert.ok(r.ok && r.credits === 5000 && r.fromAmount === 5000 && r.packKey === 'amount')
 })
 
-test('a pack can be named by its label, in any case', () => {
-  const r = decideCredits({ pack: ' POPULAR ' }, PACKS)
-  assert.ok(r.ok && r.credits === 220 && r.packKey === 'popular')
+test('a fraction of a credit is never granted — it rounds down', () => {
+  // ₹589 → ₹499.15 taxable → 4,991.5 → 4,991.
+  const r = decideCredits({}, paise(589), RATE, PACKS)
+  assert.ok(r.ok && r.credits === 4991)
 })
 
-test('an unknown or inactive pack goes to a human', () => {
-  assert.equal(decideCredits({ pack: 'mega' }, PACKS).ok, false)
-  assert.equal(decideCredits({ pack: 'retired' }, PACKS).ok, false)
+test("paying a pack's exact price labels the purchase with that pack", () => {
+  const r = decideCredits({}, paise(588.82), RATE, PACKS)
+  assert.ok(r.ok && r.credits === 4990 && r.packKey === 'starter')
 })
 
-test('custom credits are granted as a custom deal', () => {
-  const r = decideCredits({ credits: '1,300' }, PACKS)
-  assert.ok(r.ok && r.credits === 1300 && r.packKey === 'custom')
+test('an inactive pack never labels a purchase', () => {
+  // ₹1.18 incl. GST = ₹1 taxable, the retired pack's price.
+  const r = decideCredits({}, paise(1.18), RATE, PACKS)
+  assert.ok(r.ok && r.credits === 10 && r.packKey === 'amount')
 })
 
-test('custom credits are capped; the cap itself is allowed', () => {
-  assert.equal(decideCredits({ credits: String(MAX_CUSTOM_CREDITS) }, PACKS).ok, true)
-  const over = decideCredits({ credits: String(MAX_CUSTOM_CREDITS + 1) }, PACKS)
-  assert.ok(!over.ok && over.reason.startsWith('custom_credits_over_cap'))
+test('a pack note is only a label: the amount decides the credits', () => {
+  // "bulk" typed on a Starter-priced link used to grant a Bulk pack.
+  const r = decideCredits({ pack: 'bulk' }, paise(588.82), RATE, PACKS)
+  assert.ok(r.ok && r.credits === 4990 && r.packKey === 'starter')
+})
+
+test('the rate is applied as configured', () => {
+  const r = decideCredits({}, paise(590), 2.5, PACKS)
+  assert.ok(r.ok && r.credits === 1250)
+})
+
+test('a credits note inside the band overrides the amount (a special deal)', () => {
+  const r = decideCredits({ credits: '6,000' }, paise(590), RATE, PACKS)
+  assert.ok(r.ok && r.credits === 6000 && r.fromAmount === 5000 && r.packKey === 'custom')
+})
+
+test('the band edges — half and double what the amount buys — are allowed', () => {
+  assert.equal(decideCredits({ credits: '2500' }, paise(590), RATE, PACKS).ok, true)
+  assert.equal(decideCredits({ credits: '10000' }, paise(590), RATE, PACKS).ok, true)
+})
+
+test('a credits note far from the amount goes to a human (an extra or a missing zero)', () => {
+  const tooMany = decideCredits({ credits: '50000' }, paise(590), RATE, PACKS)
+  assert.ok(!tooMany.ok && tooMany.reason.startsWith('credits_note_far_from_amount'))
+  const tooFew = decideCredits({ credits: '500' }, paise(590), RATE, PACKS)
+  assert.ok(!tooFew.ok && tooFew.reason.startsWith('credits_note_far_from_amount'))
 })
 
 for (const bad of ['0', '-5', '12.5', 'abc', '']) {
   test(`credits note ${JSON.stringify(bad)} is not a positive integer`, () => {
     assert.equal(parseCredits(bad), null)
-    assert.equal(decideCredits({ credits: bad }, PACKS).ok, false)
+    assert.equal(decideCredits({ credits: bad }, paise(590), RATE, PACKS).ok, false)
   })
 }
 
-test('a pack and credits that agree grant the pack', () => {
-  const r = decideCredits({ pack: 'pro', credits: '600' }, PACKS)
-  assert.ok(r.ok && r.packKey === 'pro' && r.credits === 600)
+test('an amount too small to buy one credit goes to a human', () => {
+  const r = decideCredits({}, 5, RATE, PACKS)
+  assert.ok(!r.ok && r.reason.startsWith('amount_too_small'))
 })
 
-test('a pack and credits that disagree go to a human', () => {
-  const r = decideCredits({ pack: 'pro', credits: '650' }, PACKS)
-  assert.ok(!r.ok && r.reason.startsWith('pack_and_credits_disagree'))
-})
-
-test('an unrecognised pack name next to credits is just a label for a custom deal', () => {
-  const r = decideCredits({ pack: 'diwali offer', credits: '700' }, PACKS)
-  assert.ok(r.ok && r.credits === 700 && r.packKey === 'custom')
-})
-
-test('neither a pack nor credits goes to a human', () => {
-  assert.deepEqual(decideCredits({ wholesaler_id: W1 }, PACKS), { ok: false, reason: 'no_pack_or_credits_in_notes' })
+test('CREDITS_PER_RUPEE must be a positive number', () => {
+  assert.equal(parseRate('10'), 10)
+  assert.equal(parseRate(' 2.5 '), 2.5)
+  for (const bad of [undefined, null, '', '0', '-1', 'ten', 'NaN', 'Infinity']) {
+    assert.equal(parseRate(bad as string | null | undefined), null, String(bad))
+  }
 })
 
 // ── money ────────────────────────────────────────────────────────────────────
@@ -295,42 +317,4 @@ test('taxable + gst is always exactly what was paid, and matches exact integer r
     const exact = (BigInt(paise) * 200n + 118n) / 236n
     assert.equal(BigInt(taxablePaise), exact, `paise=${paise}`)
   }
-})
-
-// ── Price floor: hand-typed notes on the wrong link ─────────────────────────
-// Bulk list: ₹9,999 + 18% = ₹11,798.82 → floor half of that, ₹5,899.41.
-
-const bulk = PACKS.find((p) => p.key === 'bulk')!
-const pro = PACKS.find((p) => p.key === 'pro')!
-
-test('a pack paid at list price passes the floor', () => {
-  assert.deepEqual(checkPaidAgainstList({ credits: 1300, pack: bulk }, PACKS, 1_179_882), { ok: true })
-})
-
-test('a discounted pack above half of list still passes', () => {
-  // Pro at 40% off: ₹4,999 × 0.6 × 1.18 ≈ ₹3,539.29.
-  assert.deepEqual(checkPaidAgainstList({ credits: 600, pack: pro }, PACKS, 353_929), { ok: true })
-})
-
-test('"bulk" noted on a Starter-priced link goes to a human', () => {
-  const result = checkPaidAgainstList({ credits: 1300, pack: bulk }, PACKS, 58_882)
-  assert.equal(result.ok, false)
-  assert.match((result as { reason: string }).reason, /^paid_far_below_list/)
-})
-
-test('a custom deal is judged at the best active pack rate', () => {
-  // 650 credits at the bulk rate (₹7.69/credit) ≈ ₹4,999.5 + GST ≈ ₹5,899.4.
-  assert.deepEqual(checkPaidAgainstList({ credits: 650, pack: null }, PACKS, 589_941), { ok: true })
-  const tooCheap = checkPaidAgainstList({ credits: 1300, pack: null }, PACKS, 58_882)
-  assert.equal(tooCheap.ok, false)
-})
-
-test('an inactive pack never sets the rate a custom deal is judged by', () => {
-  // The retired pack is 999 credits for ₹1. If it counted, anything would pass.
-  const result = checkPaidAgainstList({ credits: 1300, pack: null }, PACKS, 1_000)
-  assert.equal(result.ok, false)
-})
-
-test('with no priced packs a custom deal cannot be judged, so it passes', () => {
-  assert.deepEqual(checkPaidAgainstList({ credits: 100, pack: null }, [], 100), { ok: true })
 })

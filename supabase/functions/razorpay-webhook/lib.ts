@@ -2,9 +2,6 @@
 // imports — so it can be unit-tested on its own (lib.test.ts) and index.ts
 // stays a thin shell around it.
 
-/** Custom (non-pack) grants above this go to manual handling, not the wallet. */
-export const MAX_CUSTOM_CREDITS = 5000
-
 /** Payment Link amounts are GST-inclusive at this rate. */
 export const GST_RATE_PERCENT = 18
 
@@ -208,7 +205,7 @@ export function decideWholesaler(candidates: Candidate[]): WholesalerDecision {
 // How many credits
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** One row of credit_packs. */
+/** One row of credit_packs — suggested amounts, used here only as labels. */
 export interface Pack {
   key: string
   label?: string | null
@@ -218,8 +215,23 @@ export interface Pack {
 }
 
 export type CreditDecision =
-  | { ok: true; credits: number; packKey: string; pack: Pack | null }
+  | { ok: true; credits: number; packKey: string; fromAmount: number }
   | { ok: false; reason: string }
+
+/**
+ * A `credits` note may differ from what the amount buys — a bonus on a big
+ * order, a goodwill top-up — but only within this band. Outside it the note
+ * is almost certainly a typo (an extra or a missing zero), so a human checks.
+ */
+export const CREDITS_NOTE_BAND = { min: 0.5, max: 2 } as const
+
+/** CREDITS_PER_RUPEE → a positive number, or null when unset or unusable. */
+export function parseRate(raw: string | null | undefined): number | null {
+  const text = (raw ?? '').trim()
+  if (!text) return null
+  const n = Number(text)
+  return Number.isFinite(n) && n > 0 ? n : null
+}
 
 /** "1,300" / "1 300" / "600" → a positive integer, or null. */
 export function parseCredits(raw: string): number | null {
@@ -229,85 +241,40 @@ export function parseCredits(raw: string): number | null {
   return Number.isSafeInteger(n) && n > 0 ? n : null
 }
 
-function findPack(name: string, packs: Pack[]): Pack | null {
-  const wanted = name.trim().toLowerCase()
-  return packs.find((p) => p.active && (p.key === wanted || (p.label ?? '').trim().toLowerCase() === wanted)) ?? null
-}
-
 /**
- * notes.pack (a credit_packs key or label) or notes.credits (a custom deal).
- * Notes are set by the Jewel India team, not the payer, so once the signature
- * checks out they are trusted — but anything unclear goes to a human.
+ * Credits = the amount paid excluding GST × CREDITS_PER_RUPEE, rounded down.
+ *
+ * The amount is the one thing on a Payment Link the payer checks, so it —
+ * not a hand-typed note — decides what a payment buys; a pack name on the
+ * wrong link can no longer grant the wrong amount. A `credits` note
+ * overrides it for a special deal, within CREDITS_NOTE_BAND. A `pack` note is
+ * only a label.
  */
-export function decideCredits(notes: Notes, packs: Pack[]): CreditDecision {
-  const packName = notes.pack ?? null
-  const creditsRaw = notes.credits ?? null
-  const pack = packName ? findPack(packName, packs) : null
+export function decideCredits(
+  notes: Notes,
+  paidPaise: number,
+  creditsPerRupee: number,
+  packs: Pack[],
+): CreditDecision {
+  const taxablePaise = Math.round(splitGstInclusive(paidPaise).amountInr * 100)
+  const fromAmount = Math.floor((taxablePaise * creditsPerRupee) / 100)
+  if (!(fromAmount > 0)) return { ok: false, reason: `amount_too_small: ₹${paidPaise / 100}` }
 
+  const creditsRaw = notes.credits ?? null
   if (creditsRaw !== null) {
     const credits = parseCredits(creditsRaw)
     if (credits === null) return { ok: false, reason: `invalid_credits_note: ${creditsRaw}` }
-    if (pack) {
-      if (pack.credits !== credits) {
-        return { ok: false, reason: `pack_and_credits_disagree: ${pack.key}=${pack.credits}, credits=${credits}` }
-      }
-      return { ok: true, credits, packKey: pack.key, pack }
+    if (credits < fromAmount * CREDITS_NOTE_BAND.min || credits > fromAmount * CREDITS_NOTE_BAND.max) {
+      return { ok: false, reason: `credits_note_far_from_amount: note=${credits}, amount buys ${fromAmount}` }
     }
-    // A custom deal. An unrecognised pack name alongside it (e.g. "diwali
-    // offer") is just a label — it stays in the receipt's notes.
-    if (credits > MAX_CUSTOM_CREDITS) {
-      return { ok: false, reason: `custom_credits_over_cap: ${credits} > ${MAX_CUSTOM_CREDITS}` }
-    }
-    return { ok: true, credits, packKey: 'custom', pack: null }
+    return { ok: true, credits, packKey: 'custom', fromAmount }
   }
 
-  if (packName !== null) {
-    if (!pack) return { ok: false, reason: `unknown_or_inactive_pack: ${packName}` }
-    return { ok: true, credits: pack.credits, packKey: pack.key, pack }
-  }
-
-  return { ok: false, reason: 'no_pack_or_credits_in_notes' }
-}
-
-/**
- * Below this share of the credits' list value, a payment goes to a human.
- * Discounts are normal for a sales-assisted deal; half price is not a
- * discount, it's a typo.
- */
-export const MIN_PAID_SHARE_OF_LIST = 0.5
-
-/**
- * Notes are trusted, but they're typed by hand — and a pack name or credit
- * count on the wrong link grants the wrong amount with nothing to stop it:
- * "bulk" on a ₹589 link is 1,300 credits for the price of 50. This catches
- * payments far below list: less than half of what those credits cost at the
- * pack's price (or, for a custom deal, at the best active pack's rate).
- */
-export function checkPaidAgainstList(
-  decision: { credits: number; pack: Pack | null },
-  packs: Pack[],
-  paidPaise: number,
-): { ok: true } | { ok: false; reason: string } {
-  let listExGstPaise: number
-  if (decision.pack) {
-    listExGstPaise = Math.round(Number(decision.pack.price_inr_ex_gst) * 100)
-  } else {
-    const rates = packs
-      .filter((p) => p.active && p.credits > 0 && Number(p.price_inr_ex_gst) > 0)
-      .map((p) => (Number(p.price_inr_ex_gst) * 100) / p.credits)
-    // No priced packs to judge a custom deal against — nothing to compare.
-    if (rates.length === 0) return { ok: true }
-    listExGstPaise = Math.round(Math.min(...rates) * decision.credits)
-  }
-
-  const listPaise = Math.round((listExGstPaise * (100 + GST_RATE_PERCENT)) / 100)
-  if (paidPaise < listPaise * MIN_PAID_SHARE_OF_LIST) {
-    return {
-      ok: false,
-      reason: `paid_far_below_list: paid ₹${paidPaise / 100} for ${decision.credits} credits, list ₹${listPaise / 100}`,
-    }
-  }
-  return { ok: true }
+  // Label the purchase with the pack whose exact price was paid, if any.
+  const pack = packs.find(
+    (p) => p.active && Math.round(Number(p.price_inr_ex_gst) * 100) === taxablePaise,
+  )
+  return { ok: true, credits: fromAmount, packKey: pack?.key ?? 'amount', fromAmount }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
