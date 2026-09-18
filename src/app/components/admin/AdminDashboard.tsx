@@ -1,7 +1,15 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router';
 import { Search, User, ExternalLink } from 'lucide-react';
-import { fetchSubmissions, fetchStatusCounts, type ReviewEntity, type WholesalerStatus, type SubmissionRecord } from '../../../lib/adminApi';
+import {
+  fetchSubmissions,
+  fetchStatusCounts,
+  isRetailerRecord,
+  inviterLabel,
+  type ReviewEntity,
+  type WholesalerStatus,
+  type SubmissionRecord
+} from '../../../lib/adminApi';
 import nanoBananaLogo from '../../../assets/nano-banana-logo.png';
 
 const DEFAULT_STATUS_COUNTS = {
@@ -73,6 +81,20 @@ export function AdminDashboard() {
       <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${badges[status]}`}>
         {labels[status]}
       </span>
+    );
+  };
+
+  // Retailers only: who invited them, or a marker that they still have to enter a code.
+  const renderInviter = (submission: SubmissionRecord) => {
+    if (!isRetailerRecord(submission)) return null;
+    return submission.referred_by ? (
+      <div className="text-xs text-gray-500 mt-1">{inviterLabel(submission)}</div>
+    ) : (
+      <div className="mt-1">
+        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-800">
+          {inviterLabel(submission)}
+        </span>
+      </div>
     );
   };
 
@@ -276,7 +298,10 @@ export function AdminDashboard() {
                       <span className="font-medium">{submission.full_name}</span>
                     </div>
                   </td>
-                  <td className="px-6 py-5 text-gray-700">{submission.business_name}</td>
+                  <td className="px-6 py-5 text-gray-700">
+                    {submission.business_name}
+                    {renderInviter(submission)}
+                  </td>
                   <td className="px-6 py-5 text-gray-600">{submission.city}, {submission.state}</td>
                   <td className="px-6 py-5 text-gray-600 text-sm">{new Date(submission.created_at).toLocaleDateString()}</td>
                   <td className="px-6 py-5">

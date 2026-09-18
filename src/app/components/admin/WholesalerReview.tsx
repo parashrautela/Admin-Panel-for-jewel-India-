@@ -10,6 +10,9 @@ import {
   banSubmission,
   requestResubmissionForSubmission,
   saveSubmissionNotes,
+  isRetailerRecord,
+  inviterLabel,
+  NO_INVITER_MESSAGE,
   type ReviewEntity,
   type SubmissionRecord,
   type WholesalerStatus
@@ -62,6 +65,10 @@ export function WholesalerReview() {
   if (!submission) {
     return <div className="p-8 text-center text-red-500">{subjectLabel} not found</div>;
   }
+
+  // The database will not verify a retailer who has no inviting wholesaler yet.
+  const retailer = isRetailerRecord(submission) ? submission : null;
+  const needsInviter = retailer !== null && !retailer.referred_by;
 
   const getStatusBadge = (status: WholesalerStatus) => {
     const badges: Record<WholesalerStatus, string> = {
@@ -152,6 +159,17 @@ export function WholesalerReview() {
                 <span className="truncate max-w-[150px]">{submission.id}</span>
                 <span className="ml-2">{getStatusBadge(submission.verification_status)}</span>
               </div>
+              {retailer && (
+                <div className="mt-3 text-sm">
+                  {retailer.referred_by ? (
+                    <span className="text-gray-600">{inviterLabel(retailer)}</span>
+                  ) : (
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-800">
+                      {inviterLabel(retailer)}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Personal Details */}
@@ -239,12 +257,16 @@ export function WholesalerReview() {
                 <div>
                   <button 
                     onClick={() => wrapAction(() => verifySubmission(reviewType, submission.id))}
-                    className="w-full bg-black hover:bg-gray-800 text-white py-3.5 px-4 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50"
+                    disabled={needsInviter}
+                    title={needsInviter ? NO_INVITER_MESSAGE : undefined}
+                    className="w-full bg-black hover:bg-gray-800 text-white py-3.5 px-4 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Check className="w-5 h-5" />
                     Verify & Approve
                   </button>
-                  <p className="text-xs text-gray-500 mt-2 px-1">{subjectLabel} gets immediate access</p>
+                  <p className={`text-xs mt-2 px-1 ${needsInviter ? 'text-amber-800' : 'text-gray-500'}`}>
+                    {needsInviter ? NO_INVITER_MESSAGE : `${subjectLabel} gets immediate access`}
+                  </p>
                 </div>
 
                 {/* Put On Hold */}

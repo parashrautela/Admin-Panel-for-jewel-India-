@@ -30,12 +30,64 @@ export interface WholesalerRecord {
 export interface RetailerRecord extends WholesalerRecord {
   referred_by: string | null;
   referral_code: string | null;
+  /** `wholesalers.business_name` of `referred_by`; null while unattributed or if that row is unreadable. */
+  inviter_business_name: string | null;
 }
 
 export type SubmissionRecord = WholesalerRecord | RetailerRecord;
 
+const LIST_COLUMNS = 'id, full_name, business_name, city, state, created_at, verification_status';
+const RETAILER_LIST_COLUMNS = `${LIST_COLUMNS}, referred_by, referral_code`;
+
+/**
+ * The database refuses to move a retailer to 'verified' while `referred_by` is null
+ * (see supabase/migrations/onboarding_three_doors.sql). This is what the admin sees instead.
+ */
+export const NO_INVITER_MESSAGE =
+  'No invitation code yet — the retailer has to enter the code a wholesaler gave them before they can be approved.';
+const NO_INVITER_DB_ERROR = 'RETAILER_HAS_NO_INVITER';
+
+/** Retailer rows carry `referred_by` (null or a wholesaler id); wholesaler rows have no such column. */
+export function isRetailerRecord(record: SubmissionRecord): record is RetailerRecord {
+  return 'referred_by' in record;
+}
+
+/** "Invited by <Business name> · <CODE>", or a clear marker when no code has been entered yet. */
+export function inviterLabel(retailer: RetailerRecord): string {
+  if (!retailer.referred_by) return 'No inviter yet';
+  const name = retailer.inviter_business_name || 'Unknown wholesaler';
+  return retailer.referral_code ? `Invited by ${name} · ${retailer.referral_code}` : `Invited by ${name}`;
+}
+
 function getEntityTable(entity: ReviewEntity) {
   return ENTITY_TABLES[entity];
+}
+
+/**
+ * Resolves each retailer's inviting wholesaler. A second query by id rather than an
+ * embedded join, so it does not depend on the foreign key's name.
+ */
+async function attachInviters(retailers: RetailerRecord[]): Promise<RetailerRecord[]> {
+  const ids = Array.from(new Set(
+    retailers.map((retailer) => retailer.referred_by).filter((id): id is string => !!id)
+  ));
+  const names = new Map<string, string | null>();
+
+  if (ids.length > 0) {
+    const { data, error } = await supabase
+      .from('wholesalers')
+      .select('id, business_name')
+      .in('id', ids);
+    if (error) throw error;
+    for (const wholesaler of data ?? []) {
+      names.set(wholesaler.id, wholesaler.business_name ?? null);
+    }
+  }
+
+  return retailers.map((retailer) => ({
+    ...retailer,
+    inviter_business_name: retailer.referred_by ? names.get(retailer.referred_by) ?? null : null
+  }));
 }
 
 /**
@@ -93,18 +145,11 @@ export async function fetchSubmissions(
   pageSize?: number
 ) {
   const table = getEntityTable(entity);
-  let query = supabase
-    .from(table)
-    .select(`
-      id,
-      full_name,
-      business_name,
-      city,
-      state,
-      created_at,
-      verification_status
-    `, { count: 'exact' })
-    .order('created_at', { ascending: false });
+  // One literal per select(): supabase-js derives the row type from the column string.
+  let query = (entity === 'retailer'
+    ? supabase.from(table).select(RETAILER_LIST_COLUMNS, { count: 'exact' })
+    : supabase.from(table).select(LIST_COLUMNS, { count: 'exact' })
+  ).order('created_at', { ascending: false });
 
   if (pageSize && pageSize > 0) {
     query = query.range((page - 1) * pageSize, page * pageSize - 1);
@@ -120,8 +165,12 @@ export async function fetchSubmissions(
 
   const { data, count, error } = await query;
   if (error) throw error;
-  
-  return { data, count };
+
+  const rows = (data ?? []) as SubmissionRecord[];
+  if (entity === 'retailer') {
+    return { data: await attachInviters(rows as RetailerRecord[]), count };
+  }
+  return { data: rows, count };
 }
 
 /**
@@ -144,6 +193,10 @@ export async function fetchSubmissionDetail(entity: ReviewEntity, submissionId: 
     .single();
 
   if (error) throw error;
+  if (entity === 'retailer') {
+    const [retailer] = await attachInviters([data as RetailerRecord]);
+    return retailer;
+  }
   return data as SubmissionRecord;
 }
 
@@ -159,6 +212,9 @@ async function updateSubmissionStatus(entity: ReviewEntity, submissionId: string
     .eq('id', submissionId);
 
   if (error) {
+    if (error.message.includes(NO_INVITER_DB_ERROR)) {
+      throw new Error(NO_INVITER_MESSAGE);
+    }
     throw new Error(`Update failed: ${error.message}`);
   }
 }
