@@ -29,6 +29,7 @@ function fake(over: Partial<Deps> & { envs?: Record<string, string> } = {}): Fak
   const links: Fake['links'] = []
   const logs: Fake['logs'] = []
   const deps: Deps = {
+    paymentsEnabled: async () => true,
     env: (name) => envs[name] ?? '',
     userFromJwt: async (jwt) => (jwt === 'alice-jwt' ? ALICE : null),
     activePacks: async () => PACKS,
@@ -214,4 +215,21 @@ test('a phone-only sign-up still gets a prefilled checkout', async () => {
   await call(f, { action: 'create', pack_key: 'popular' })
   assert.deepEqual(f.links[0].body.customer, { name: 'Alice Gems', contact: '+919876543210' })
   assert.equal(f.links[0].body.amount, 118_000)
+})
+
+for (const action of ['options', 'create', 'onboarding_create', 'onboarding_status']) {
+  test(`payment retirement blocks ${action} without calling pricing or Razorpay`, async () => {
+    const f = fake({ paymentsEnabled: async () => false, activePacks: async () => { throw new Error('must not load packs') } })
+    const reply = await call(f, { action, pack_key: 'starter' })
+    assert.equal(reply.status, 410)
+    assert.equal(reply.body.error, 'PAYMENTS_DISABLED')
+    assert.equal(f.links.length, 0)
+  })
+}
+test('missing or unreachable purchase configuration fails closed', async () => {
+  for (const paymentsEnabled of [undefined, async () => { throw new Error('database unavailable') }]) {
+    const f = fake({ paymentsEnabled })
+    assert.equal((await call(f, { action: 'create', pack_key: 'starter' })).body.error, 'PAYMENTS_DISABLED')
+    assert.equal(f.links.length, 0)
+  }
 })

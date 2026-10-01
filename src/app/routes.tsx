@@ -1,3 +1,4 @@
+import { WishlistControls } from "./components/admin/WishlistControls";
 import { createBrowserRouter } from 'react-router';
 import { AdminDashboard } from './components/admin/AdminDashboard';
 import { WholesalerReview } from './components/admin/WholesalerReview';
@@ -86,6 +87,7 @@ function StatusOnHoldPage() {
 }
 
 export const router = createBrowserRouter([
+  { path: '/wishlist-controls', Component: WishlistControls },
   {
     path: '/',
     element: (

@@ -67,6 +67,10 @@ serve(async (req: Request) => {
   try {
     reply = await handleTopUp(req.method, req.headers.get('Authorization'), await req.text(), {
       env,
+      paymentsEnabled: async () => {
+        const { data, error } = await admin.rpc('credits_program_status')
+        return !error && data?.payments_enabled === true
+      },
       userFromJwt: async (jwt) => {
         const { data, error } = await admin.auth.getUser(jwt)
         return error || !data?.user ? null : data.user

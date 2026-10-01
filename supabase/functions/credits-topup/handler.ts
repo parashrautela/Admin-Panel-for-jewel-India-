@@ -22,6 +22,8 @@ export type RazorpayResult =
   | { ok: false; status: number; description: string }
 
 export interface Deps {
+  /** Missing/unreachable program configuration disables new purchases. */
+  paymentsEnabled?: () => Promise<boolean>
   env: (name: string) => string
   /** The signed-in user behind the request's JWT, or null. */
   userFromJwt: (jwt: string) => Promise<AuthUser | null>
@@ -53,6 +55,11 @@ export async function handleTopUp(
   deps: Deps,
 ): Promise<Reply> {
   if (method !== 'POST') return fail(405, 'method_not_allowed', 'Use POST.')
+
+  let paymentsEnabled = false
+  try { paymentsEnabled = await deps.paymentsEnabled?.() ?? false }
+  catch { deps.log('warn', 'Purchase configuration unavailable; refusing checkout') }
+  if (!paymentsEnabled) return fail(410, 'PAYMENTS_DISABLED', 'Credit purchases are unavailable. Your daily allowance resets at midnight India time.')
 
   const rate = parseRate(deps.env('CREDITS_PER_RUPEE'))
   if (!rate) {
