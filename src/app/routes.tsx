@@ -1,3 +1,4 @@
+import { Referrals } from "./components/admin/Referrals";
 import { WishlistControls } from "./components/admin/WishlistControls";
 import { createBrowserRouter } from 'react-router';
 import { AdminDashboard } from './components/admin/AdminDashboard';
@@ -87,6 +88,7 @@ function StatusOnHoldPage() {
 }
 
 export const router = createBrowserRouter([
+  { path:'/referrals',element:<AdminProtected><Referrals /></AdminProtected> },
   { path: '/wishlist-controls', Component: WishlistControls },
   {
     path: '/',

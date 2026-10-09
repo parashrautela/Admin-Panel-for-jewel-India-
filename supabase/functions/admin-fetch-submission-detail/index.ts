@@ -36,6 +36,11 @@ serve(async (req: Request) => {
       .single()
     if (error) throw error
 
+    if(safeTable==='retailers' && data.referred_by) {
+      const inviter=await supabaseClient.from('wholesalers').select('business_name').eq('id',data.referred_by).maybeSingle()
+      if(inviter.error)throw inviter.error
+      data.inviter_business_name=inviter.data?.business_name ?? null
+    }
     return new Response(JSON.stringify(data), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })

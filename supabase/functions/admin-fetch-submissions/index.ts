@@ -30,7 +30,7 @@ serve(async (req: Request) => {
 
     let query = supabaseClient
       .from(safeTable)
-      .select('id, full_name, business_name, city, state, created_at, verification_status')
+      .select(safeTable==='retailers' ? 'id, full_name, business_name, city, state, created_at, verification_status, referred_by, referral_code' : 'id, full_name, business_name, city, state, created_at, verification_status')
 
     if (statusFilter) {
       query = query.eq('verification_status', statusFilter)
@@ -44,6 +44,14 @@ serve(async (req: Request) => {
     const { data, error } = await query.order('created_at', { ascending: false })
     if (error) throw error
 
+    if(safeTable==='retailers' && data?.length) {
+      const ids=[...new Set(data.map((r:any)=>r.referred_by).filter(Boolean))]
+      if(ids.length) {
+        const names=await supabaseClient.from('wholesalers').select('id,business_name').in('id',ids)
+        if(names.error)throw names.error
+        for(const row of data as any[]) row.inviter_business_name=names.data?.find(w=>w.id===row.referred_by)?.business_name ?? null
+      }
+    }
     return new Response(JSON.stringify(data ?? []), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })

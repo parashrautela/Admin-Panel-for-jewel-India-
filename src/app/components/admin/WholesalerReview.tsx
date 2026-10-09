@@ -1,3 +1,4 @@
+import { ReferralPanel } from './Referrals';
 import { useState, useEffect } from 'react';
 import { Link, useParams, useNavigate } from 'react-router';
 import { ArrowLeft, ExternalLink, Check, Pause, RotateCcw, X, Ban, AlertCircle } from 'lucide-react';
@@ -172,6 +173,7 @@ export function WholesalerReview() {
               )}
             </div>
 
+            <div className="mb-6"><ReferralPanel wholesalerId={retailer ? undefined : submission.id} retailerId={retailer ? submission.id : undefined} /></div>
             {/* Personal Details */}
             <div className="bg-white rounded-lg border border-gray-100 shadow-sm p-8 mb-6">
               <h2 className="text-lg font-medium mb-6">Personal Details</h2>
@@ -343,6 +345,7 @@ export function WholesalerReview() {
                   
                   {showRejection && (
                     <div className="mt-4 p-5 bg-gray-50 rounded-lg border border-gray-200">
+                      {reviewType === 'retailer' && <p className="text-sm text-gray-700 mb-4">Final rejection ends any new invitation gift and releases its funding. Use Request Resubmission when documents need corrections.</p>}
                       <p className="text-sm font-medium mb-4">Select rejection reason:</p>
                       <div className="space-y-2.5 mb-4">
                         {[

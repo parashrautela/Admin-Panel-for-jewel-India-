@@ -29,6 +29,10 @@ serve(async (req: Request) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
+    if(safeTable === 'retailers') {
+      const {data,error} = await supabaseClient.rpc('referral_admin_review', {p_retailer:id,p_status:'verified',p_reason:null,p_request:crypto.randomUUID()})
+      if(error || !data?.ok) throw error ?? new Error(data?.error || 'Review failed')
+    } else {
     const { error } = await supabaseClient
       .from(safeTable)
       .update({
@@ -38,6 +42,8 @@ serve(async (req: Request) => {
       })
       .eq('id', id)
     if (error) throw error
+
+    }
 
     return new Response(JSON.stringify({ success: true }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

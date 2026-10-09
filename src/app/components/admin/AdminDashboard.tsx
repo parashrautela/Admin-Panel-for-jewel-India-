@@ -108,6 +108,7 @@ export function AdminDashboard() {
             <span className="font-semibold text-xl">Admin</span>
           </div>
           <div className="flex items-center gap-4">
+            <Link to="/referrals" className="text-sm underline">Referrals</Link>
             <Link to="/wishlist-controls" className="text-sm underline">Wishlist controls</Link>
             <span className="text-sm text-gray-600">Admin User</span>
             <div className="w-9 h-9 bg-black rounded-full flex items-center justify-center text-white text-sm">

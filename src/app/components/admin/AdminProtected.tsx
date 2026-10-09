@@ -1,28 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 
-const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || 'admin123';
-
+import { supabase } from '../../../lib/supabase';
+import { adminSession } from '../../../lib/adminSession';
 export function AdminProtected({ children }: { children: React.ReactNode }) {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    const auth = sessionStorage.getItem('admin_auth');
-    if (auth === 'true') {
-      setIsAuthenticated(true);
-    }
-  }, []);
-
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (password === ADMIN_PASSWORD) {
-      sessionStorage.setItem('admin_auth', 'true');
-      setIsAuthenticated(true);
-      setError('');
-    } else {
-      setError('Incorrect password');
-    }
+  const [isAuthenticated,setIsAuthenticated]=useState(!!adminSession.password);
+  const [password,setPassword]=useState('');
+  const [error,setError]=useState('');
+  const [busy,setBusy]=useState(false);
+  const handleLogin=async(e:React.FormEvent)=>{
+    e.preventDefault();setBusy(true);setError('');
+    const result=await supabase.functions.invoke('admin-verify-password',{headers:{'x-admin-password':password}});
+    setBusy(false);
+    if(result.error){setError('Could not sign in. Check your password and connection.');return;}
+    adminSession.password=password;setPassword('');setIsAuthenticated(true);
   };
 
   if (isAuthenticated) {
@@ -51,7 +41,7 @@ export function AdminProtected({ children }: { children: React.ReactNode }) {
             />
           </div>
           {error && <p className="text-red-500 text-sm">{error}</p>}
-          <button
+          <button disabled={busy}
             type="submit"
             className="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 transition"
           >
