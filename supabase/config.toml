@@ -1,0 +1,12 @@
+# Admin handlers validate x-admin-password against the server ADMIN_PASSWORD.
+# Keep gateway JWT verification off for shared-password admin sessions.
+project_id = "ljxgwiuvdpuarvdszjts"
+
+[functions.admin-credit-allowances]
+verify_jwt = false
+
+[functions.admin-wishlist-shares]
+verify_jwt = false
+
+[functions.admin-referrals]
+verify_jwt = false

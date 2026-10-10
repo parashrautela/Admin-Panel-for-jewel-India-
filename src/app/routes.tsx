@@ -1,3 +1,4 @@
+import { CreditAllowances } from "./components/admin/CreditAllowances";
 import { Referrals } from "./components/admin/Referrals";
 import { WishlistControls } from "./components/admin/WishlistControls";
 import { createBrowserRouter } from 'react-router';
@@ -88,6 +89,7 @@ function StatusOnHoldPage() {
 }
 
 export const router = createBrowserRouter([
+  { path: '/credits', element: <AdminProtected><CreditAllowances /></AdminProtected> },
   { path:'/referrals',element:<AdminProtected><Referrals /></AdminProtected> },
   { path: '/wishlist-controls', Component: WishlistControls },
   {

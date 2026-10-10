@@ -154,3 +154,29 @@ export async function saveAdminNotes(wholesalerId: string, notes: string) {
 export async function saveRetailerNotes(retailerId: string, notes: string) {
   await saveSubmissionNotes('retailer', retailerId, notes);
 }
+
+export interface CreditAllowanceItem {
+  wholesaler_id: string; user_id: string; business_name: string; full_name: string; phone: string;
+  verification_status: string; daily_allowance: number; is_custom: boolean; policy_version: number;
+  last_reason?: string; policy_updated_at?: string; current_allowance: number | null; next_refill_at: string | null;
+  recurring_available: number; gift_available: number; paid_available: number; available: number;
+  lifetime_spent: number; lifetime_granted: number;
+}
+export interface CreditAllowanceResult {
+  ok: boolean; items: CreditAllowanceItem[]; total_count: number; page: number; page_size: number;
+  server_now: string; program_active: boolean; default_allowance: number;
+}
+export async function fetchCreditAllowances(search = '', page = 0, pageSize = 25, wholesalerId?: string) {
+  return await adminInvoke('admin-credit-allowances', {
+    action: 'list', search, page, pageSize, wholesaler_id: wholesalerId,
+  }) as CreditAllowanceResult;
+}
+export interface AllowanceChange {
+  action: 'set_allowance' | 'reset_default'; wholesaler_id: string; daily_allowance?: number;
+  reason: string; expected_version: number; request_key: string;
+}
+export async function saveCreditAllowance(change: AllowanceChange) {
+  return await adminInvoke('admin-credit-allowances', change) as {
+    ok: boolean; version: number; effective_at: string; next_allowance: number; program_active: boolean; replayed?: boolean;
+  };
+}

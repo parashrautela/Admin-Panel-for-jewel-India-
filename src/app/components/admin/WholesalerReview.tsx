@@ -1,3 +1,4 @@
+import { CreditAllowancesPanel } from './CreditAllowances';
 import { ReferralPanel } from './Referrals';
 import { useState, useEffect } from 'react';
 import { Link, useParams, useNavigate } from 'react-router';
@@ -173,6 +174,11 @@ export function WholesalerReview() {
               )}
             </div>
 
+            {!retailer && (
+              <div className="mb-6">
+                <CreditAllowancesPanel wholesalerId={submission.id} />
+              </div>
+            )}
             <div className="mb-6"><ReferralPanel wholesalerId={retailer ? undefined : submission.id} retailerId={retailer ? submission.id : undefined} /></div>
             {/* Personal Details */}
             <div className="bg-white rounded-lg border border-gray-100 shadow-sm p-8 mb-6">

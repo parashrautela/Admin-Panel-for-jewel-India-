@@ -8,7 +8,7 @@ export function WishlistControls() {
   const [password,setPassword] = useState('');
   const [store,setStore] = useState('');
   const [shares,setShares] = useState<Share[]>([]);
-  const [program,setProgram] = useState<{daily_enabled:boolean;payments_enabled:boolean}|null>(null);
+  const [program,setProgram] = useState<{daily_enabled:boolean;payments_enabled:boolean;daily_allowance:number;wholesaler_policy?:string}|null>(null);
   const [busy,setBusy] = useState(false);
   const [error,setError] = useState('');
   async function load(action = 'list', id?:string) {
@@ -33,7 +33,8 @@ export function WishlistControls() {
       <button disabled={busy} className="bg-black text-white px-4 py-2 disabled:opacity-50">{busy ? 'Loading…' : 'Load latest links'}</button>
     </form>
     {error && <p role="alert" className="text-red-700">{error}</p>}
-    {program && <p>Daily allowance: {program.daily_enabled ? 'Active · 2,000 at midnight India time' : 'Awaiting activation'} · Purchases: {program.payments_enabled ? 'Enabled' : 'Paused'}</p>}
+    {program && <p>Daily allowance: {program.daily_enabled ? `Active · Default ${program.daily_allowance.toLocaleString()} · Wholesalers: 24-hour refills · Retailers: midnight IST` : 'Awaiting activation'} · Purchases: {program.payments_enabled ? 'Enabled' : 'Paused'}</p>}
+    {shares.length > 0 && !program && <p role="status">Credit program status is unavailable. Wishlist controls remain available.</p>}
     <p className="text-sm text-gray-600">Latest 100 links. Counts represent anonymous browser sessions. Revoking a link stops further page and API access.</p>
     <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr><th className="p-3">Store</th><th>Used / limit</th><th>Expires (India)</th><th>Status</th><th>Action</th></tr></thead><tbody>{shares.map(share => <tr className="border-t" key={share.id}>
       <td className="p-3 font-mono">{share.retailer_id}</td><td>{share.views_used} / {share.max_viewers}</td><td>{new Date(share.expires_at).toLocaleString('en-IN',{timeZone:'Asia/Kolkata'})}</td>

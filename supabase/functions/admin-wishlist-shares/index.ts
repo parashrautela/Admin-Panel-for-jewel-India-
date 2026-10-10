@@ -31,8 +31,8 @@ Deno.serve(async (request: Request) => {
       .order('created_at',{ascending:false}).limit(100)
     if (body.store_id) query = query.eq('retailer_id',body.store_id)
     const [{data,error},program] = await Promise.all([query,db.rpc('credits_program_status')])
-    if (error || program.error) throw error ?? program.error
-    return reply({shares:data,program:program.data})
+    if (error) throw error
+    return reply({shares:data,program:program.error ? null : program.data,program_unavailable:!!program.error})
   } catch {
     return reply({error:'ADMIN_WISHLISTS_UNAVAILABLE'},503)
   }
