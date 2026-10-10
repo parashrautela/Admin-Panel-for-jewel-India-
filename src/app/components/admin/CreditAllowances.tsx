@@ -1,116 +1,84 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import { fetchCreditAllowances, saveCreditAllowance } from '../../../lib/adminApi';
-import type { AllowanceChange, CreditAllowanceItem, CreditAllowanceResult } from '../../../lib/adminApi';
+import type { AllowanceChange, CreditAllowanceItem, CreditAllowanceResult, ReviewEntity } from '../../../lib/adminApi';
 const indiaTime = (value: string) => new Date(value).toLocaleString('en-IN', {timeZone:'Asia/Kolkata',dateStyle:'medium',timeStyle:'short'}) + ' IST';
 
-export function CreditAllowancesPanel({wholesalerId}: {wholesalerId?: string}) {
-  const [result,setResult] = useState<CreditAllowanceResult | null>(null);
-  const [page,setPage] = useState(0);
-  const [search,setSearch] = useState('');
-  const [busy,setBusy] = useState(false);
-  const [error,setError] = useState('');
-  const [revision,setRevision] = useState(0);
-  const [editor,setEditor] = useState<{item:CreditAllowanceItem; reset:boolean} | null>(null);
-  const [amount,setAmount] = useState('');
-  const [reason,setReason] = useState('');
-  const [saving,setSaving] = useState(false);
-  const [saveError,setSaveError] = useState('');
-  const [success,setSuccess] = useState('');
-  const request = useRef<AllowanceChange | null>(null);
-  const inFlight = useRef(false);
-  useEffect(() => {
-    let active=true;
-    const timer=setTimeout(() => {
-      setBusy(true);setError('');
-      fetchCreditAllowances(wholesalerId ? '' : search,wholesalerId ? 0 : page,25,wholesalerId)
-        .then(data => {if(active) setResult(data);})
-        .catch(err => {if(active) {setResult(null);setError(err instanceof Error ? err.message : 'Could not load allowances.');}})
-        .finally(() => {if(active) setBusy(false);});
+export function CreditAllowancesPanel({wholesalerId,businessType='wholesaler'}: {wholesalerId?: string;businessType?:ReviewEntity}) {
+  const [result,setResult]=useState<CreditAllowanceResult|null>(null),[page,setPage]=useState(0),[search,setSearch]=useState('');
+  const [busy,setBusy]=useState(true),[error,setError]=useState(''),[revision,setRevision]=useState(0);
+  const [editor,setEditor]=useState<{item:CreditAllowanceItem;reset:boolean}|null>(null);
+  const [amount,setAmount]=useState(''),[reason,setReason]=useState(''),[saving,setSaving]=useState(false),[saveError,setSaveError]=useState(''),[success,setSuccess]=useState('');
+  const request=useRef<AllowanceChange|null>(null),inFlight=useRef(false);
+  useEffect(()=>{setResult(null);setEditor(null);setSuccess('');request.current=null;},[wholesalerId,businessType]);
+  useEffect(()=>{
+    let active=true;setBusy(true);
+    const timer=setTimeout(()=>{
+      setError('');fetchCreditAllowances(wholesalerId?'':search,wholesalerId?0:page,25,wholesalerId,businessType)
+        .then(data=>{if(active)setResult(data);})
+        .catch(err=>{if(active){setResult(null);setError(err instanceof Error?err.message:'Could not load credits.');}})
+        .finally(()=>{if(active)setBusy(false);});
     },200);
-    return () => {active=false;clearTimeout(timer);};
-  },[search,page,revision,wholesalerId]);
-  function open(item:CreditAllowanceItem,reset=false) {
-    request.current=null;setEditor({item,reset});setAmount(String(item.daily_allowance));
-    setReason('');setSaveError('');setSuccess('');
+    return ()=>{active=false;clearTimeout(timer);};
+  },[search,page,revision,wholesalerId,businessType]);
+  function open(item:CreditAllowanceItem,reset=false,pause=false){
+    request.current=null;setEditor({item,reset});setAmount(pause?'0':String(item.daily_allowance));setReason('');setSaveError('');setSuccess('');
   }
-  async function save() {
-    if(!editor || inFlight.current) return;
+  async function save(){
+    if(!editor||inFlight.current)return;
     const value=Number(amount);
-    if(!editor.reset && (!amount.trim() || !Number.isInteger(value) || value<0 || value>100000)) {
-      setSaveError('Enter a whole number between 0 and 100,000.');return;
-    }
-    if(!reason.trim() || reason.trim().length>500) {setSaveError('Enter a reason of 1–500 characters.');return;}
-    const draft={action:editor.reset ? 'reset_default' as const : 'set_allowance' as const,
-      wholesaler_id:editor.item.wholesaler_id,daily_allowance:editor.reset ? undefined : value,
-      reason:reason.trim(),expected_version:editor.item.policy_version};
-    const previous=request.current;
-    if(!previous || JSON.stringify({...previous,request_key:undefined})!==JSON.stringify(draft)) {
-      request.current={...draft,request_key:crypto.randomUUID()};
-    }
+    if(!editor.reset&&(!amount.trim()||!Number.isInteger(value)||value<0||value>100000)){setSaveError('Enter a whole number from 0 to 100,000.');return;}
+    if(!reason.trim()||reason.trim().length>500){setSaveError('Add a short reason for this change.');return;}
+    const draft={business_type:businessType,action:editor.reset?'reset_default' as const:'set_allowance' as const,wholesaler_id:editor.item.wholesaler_id,daily_allowance:editor.reset?undefined:value,reason:reason.trim(),expected_version:editor.item.policy_version};
+    if(!request.current||JSON.stringify({...request.current,request_key:undefined})!==JSON.stringify(draft))request.current={...draft,request_key:crypto.randomUUID()};
     inFlight.current=true;setSaving(true);setSaveError('');
-    try {
+    try{
       const data=await saveCreditAllowance(request.current!);
-      setSuccess(`Saved: ${data.next_allowance.toLocaleString('en-IN')} credits at the next eligible refill, from ${indiaTime(data.effective_at)}.${data.program_active ? '' : ' The daily program still awaits activation.'}`);
+      setSuccess(data.next_allowance===0?'Saved. Credits will pause after the current allowance ends.':`Saved. ${data.next_allowance.toLocaleString('en-IN')} credits will be available at the next refill.`);
       setEditor(null);setRevision(n=>n+1);request.current=null;
-    } catch(err) {setSaveError(err instanceof Error ? err.message : 'Could not save. Retry to check the same request.');}
-    finally {inFlight.current=false;setSaving(false);}
+    }catch(err){setSaveError(err instanceof Error?err.message:'Could not save. Please retry.');}
+    finally{inFlight.current=false;setSaving(false);}
   }
-  return <section className="space-y-5 border border-gray-200 rounded-xl p-6 bg-white shadow-sm">
-    <div className="flex flex-wrap items-center justify-between gap-4">
-      <div><h2 className="text-xl font-bold">Wholesaler credit allowances</h2>
-        <p className="text-sm text-gray-600 mt-1">Each issued allowance lasts 24 hours. Changes apply at the next refill; current credits stay available until their deadline.</p>
+  const editForm=editor&&<form onSubmit={e=>{e.preventDefault();void save();}} className="rounded-lg bg-gray-50 border border-gray-200 p-4 space-y-3" aria-label="Change credit allowance">
+    <h3 className="font-semibold">{editor.reset?'Use default credits':'Change credits'}</h3>
+    {!wholesalerId&&<p>{editor.item.business_name}</p>}
+    {editor.reset?<p>{result?.default_allowance.toLocaleString()} credits every 24 hours.</p>:<label className="block text-sm font-medium">Credits per 24 hours<input required type="number" min="0" max="100000" step="1" value={amount} disabled={saving} onChange={e=>setAmount(e.target.value)} className="block mt-1 border border-gray-300 p-2 rounded w-full max-w-xs bg-white"/></label>}
+    <label className="block text-sm font-medium">Reason<input required placeholder="Why are you changing this?" maxLength={500} value={reason} disabled={saving} onChange={e=>setReason(e.target.value)} className="block mt-1 border border-gray-300 p-2 rounded w-full bg-white"/></label>
+    <p className="text-sm text-gray-600">Starts {editor.item.next_refill_at?`at the next refill: ${indiaTime(editor.item.next_refill_at)}`:'on the next wallet visit'}. Set 0 to pause. Current credits stay available until their expiry.</p>
+    {saveError&&<p role="alert" className="text-red-700 text-sm">{saveError}</p>}
+    <div className="flex gap-3"><button disabled={saving} className="bg-gray-900 text-white rounded-lg px-4 py-2 text-sm font-medium">{saving?'Saving…':'Save credits'}</button><button type="button" disabled={saving} onClick={()=>setEditor(null)} className="border rounded-lg px-4 py-2 text-sm">Cancel</button></div>
+  </form>;
+  function actions(item:CreditAllowanceItem){
+    const disabled=saving||item.verification_status!=='verified'||!item.user_id;
+    return <div className="flex flex-wrap items-center gap-3"><button onClick={()=>open(item)} disabled={disabled} className="bg-gray-900 text-white rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-40">Change credits</button>
+      {item.daily_allowance>0&&<button onClick={()=>open(item,false,true)} disabled={disabled} className="border rounded-lg px-3 py-2 text-sm disabled:opacity-40">Pause credits</button>}
+      {item.is_custom&&<button onClick={()=>open(item,true)} disabled={disabled} className="text-sm underline disabled:opacity-40">Use default ({result?.default_allowance.toLocaleString()})</button>}
+      {item.verification_status!=='verified'&&<p className="text-sm text-gray-500">Verify this business to change its credits.</p>}
+    </div>;
+  }
+  const item=result?.items[0];
+  return <section id={wholesalerId?'credits':undefined} className="space-y-4 border border-gray-200 rounded-xl p-5 bg-white" aria-label="Business credits">
+    <div className="flex justify-between items-center gap-3"><h2 className="text-lg font-semibold">{wholesalerId?'Credits':'Credit allowances'}</h2><button disabled={busy||saving} onClick={()=>setRevision(n=>n+1)} className="text-sm underline disabled:opacity-40">Refresh</button></div>
+    {result&&!result.program_active&&<p role="status" className="bg-amber-50 p-3 rounded text-sm">Recurring credits are not active yet.</p>}
+    {error&&<p role="alert" className="text-red-700 text-sm">{error}</p>}{success&&<p role="status" className="text-emerald-800 bg-emerald-50 p-3 rounded text-sm">{success}</p>}
+    {busy&&<p role="status" className="text-sm text-gray-500">Loading credits…</p>}
+    {!busy&&!error&&result&&!result.items.length&&<p className="text-sm">No business found.</p>}
+    {wholesalerId&&item&&!busy?<>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div><p className="text-sm text-gray-500">Available now</p><p className="text-2xl font-semibold mt-1">{item.available.toLocaleString('en-IN')}</p></div>
+        <div><p className="text-sm text-gray-500">Credits per 24 hours</p><p className="text-2xl font-semibold mt-1">{item.daily_allowance===0?'Paused':item.daily_allowance.toLocaleString('en-IN')}</p></div>
+        <div><p className="text-sm text-gray-500">Next refill</p><p className="text-sm font-medium mt-2">{item.next_refill_at?indiaTime(item.next_refill_at):item.daily_allowance===0?'Paused':'Next wallet visit'}</p></div>
       </div>
-      <button disabled={busy || saving} onClick={()=>setRevision(n=>n+1)} className="border rounded px-3 py-2 disabled:opacity-50">Refresh</button>
-    </div>
-    {result && !result.program_active && <p role="status" className="bg-amber-50 p-3 rounded">The credit program awaits activation. Settings can be saved, but recurring grants are not active.</p>}
-    {!wholesalerId && <input aria-label="Search wholesalers" placeholder="Business name, contact or phone" value={search}
-      onChange={e=>{setSearch(e.target.value);setPage(0);}} className="border rounded p-2 w-full max-w-md" />}
-    {error && <p role="alert" className="text-red-700">{error}</p>}
-    {success && <p role="status" className="bg-emerald-50 text-emerald-800 p-3 rounded">{success}</p>}
-    {busy && <p role="status">Loading allowances…</p>}
-    {!busy && result && !result.items.length && <p>No matching wholesaler found.</p>}
-    <div className="overflow-x-auto"><table className="w-full text-left text-sm">
-      <thead><tr className="border-b"><th className="p-3">Business</th><th>Current window</th><th>Next allowance</th><th>Available credits</th><th>Actions</th></tr></thead>
-      <tbody>{result?.items.map(item=><tr key={item.wholesaler_id} className="border-b">
-        <td className="p-3 align-top"><Link className="text-amber-700 underline" to={`/review/wholesaler/${item.wholesaler_id}`}>{item.business_name || 'Unnamed business'}</Link>
-          <p>{item.full_name} · {item.phone}</p><p className="text-xs text-gray-500">{item.verification_status}</p></td>
-        <td className="py-3 align-top">{item.current_allowance == null ? 'No active allowance' : `${item.current_allowance.toLocaleString()} issued`}
-          <p className="text-xs">{item.next_refill_at ? `Next refill: ${indiaTime(item.next_refill_at)}` : 'On the next eligible wallet visit'}</p></td>
-        <td className="py-3 align-top"><strong>{item.daily_allowance===0 ? 'Paused (0)' : item.daily_allowance.toLocaleString()}</strong>
-          <p>{item.is_custom ? 'Custom' : `Default (${result.default_allowance.toLocaleString()})`}</p>
-          {item.last_reason && <p className="text-xs text-gray-500">{item.last_reason}</p>}</td>
-        <td className="py-3 align-top"><strong>{item.available.toLocaleString()}</strong>
-          <p className="text-xs">Recurring: {item.recurring_available.toLocaleString()} · Gifts: {item.gift_available.toLocaleString()} · Paid: {item.paid_available.toLocaleString()}</p></td>
-        <td className="py-3 align-top space-x-2"><button onClick={()=>open(item)} disabled={saving || item.verification_status!=='verified' || !item.user_id}
-          className="bg-amber-700 text-white rounded px-3 py-1 disabled:opacity-40">Edit</button>
-          {item.is_custom && <button onClick={()=>open(item,true)} disabled={saving || item.verification_status!=='verified'} className="border rounded px-3 py-1 disabled:opacity-40">Use default</button>}</td>
-      </tr>)}</tbody>
-    </table></div>
-    {!wholesalerId && <div className="flex justify-between text-sm">
-      <button disabled={busy || page===0} onClick={()=>setPage(n=>n-1)}>Previous</button>
-      <span>Page {page+1} · {result?.total_count ?? 0} businesses</span>
-      <button disabled={busy || !result || (page+1)*25>=result.total_count} onClick={()=>setPage(n=>n+1)}>Next</button>
-    </div>}
-    {editor && <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-      <form role="dialog" aria-modal="true" aria-labelledby="allowance-title" onSubmit={e=>{e.preventDefault();void save();}} className="bg-white rounded-xl max-w-md w-full p-6 space-y-4">
-        <h3 id="allowance-title" className="text-xl font-bold">{editor.reset ? 'Restore default allowance' : 'Edit allowance'}</h3>
-        <p>{editor.item.business_name}</p>
-        {!editor.reset && <label className="block">Credits per 24-hour window
-          <input required type="number" min="0" max="100000" step="1" value={amount} disabled={saving} onChange={e=>setAmount(e.target.value)} className="block border p-2 rounded w-full" />
-        </label>}
-        {editor.reset && <p>The business will inherit the system default of {result?.default_allowance.toLocaleString()} credits.</p>}
-        <label className="block">Reason<input required maxLength={500} value={reason} disabled={saving} onChange={e=>setReason(e.target.value)} className="block border p-2 rounded w-full" /></label>
-        <p className="bg-amber-50 text-sm p-3 rounded">Applies {editor.item.next_refill_at ? `at the next refill, ${indiaTime(editor.item.next_refill_at)}` : 'on the next eligible wallet visit'}. Zero pauses future recurring grants. Existing paid and gift credits retain their rules.</p>
-        {saveError && <p role="alert" className="text-red-700">{saveError}</p>}
-        <div className="flex justify-end gap-3"><button type="button" disabled={saving} onClick={()=>setEditor(null)}>Cancel</button>
-          <button disabled={saving} className="bg-amber-700 text-white rounded px-4 py-2">{saving ? 'Saving…' : 'Save for next refill'}</button></div>
-      </form>
-    </div>}
+      {item.current_allowance!=null&&item.current_allowance!==item.daily_allowance&&<p className="text-sm text-gray-600">The current allowance is {item.current_allowance.toLocaleString()}. Your change starts at the next refill.</p>}
+      {!editor&&actions(item)}
+      <details className="text-sm text-gray-500"><summary className="cursor-pointer">Balance details</summary><p className="mt-2">Recurring: {item.recurring_available.toLocaleString()} · Gifts: {item.gift_available.toLocaleString()} · Purchased: {item.paid_available.toLocaleString()}</p>{businessType==='retailer'&&<p className="mt-1">Staff share this store’s credits.</p>}</details>
+    </>:null}
+    {!wholesalerId&&<>
+      <input aria-label="Search wholesalers" placeholder="Search business name" value={search} onChange={e=>{setSearch(e.target.value);setPage(0);}} className="border rounded-lg p-2 w-full max-w-md"/>
+      <div className="space-y-3">{result?.items.map(row=><div key={row.wholesaler_id} className="border rounded-lg p-4 space-y-3"><Link className="font-semibold underline" to={`/review/${businessType}/${row.wholesaler_id}`}>{row.business_name||'Unnamed business'}</Link><p className="text-sm text-gray-600">Available: {row.available.toLocaleString()} · Every 24 hours: {row.daily_allowance===0?'Paused':row.daily_allowance.toLocaleString()}</p>{actions(row)}</div>)}</div>
+      <div className="flex justify-between text-sm"><button disabled={busy||page===0} onClick={()=>setPage(n=>n-1)}>Previous</button><span>{result?.total_count??0} businesses</span><button disabled={busy||!result||(page+1)*25>=result.total_count} onClick={()=>setPage(n=>n+1)}>Next</button></div>
+    </>}
+    {editForm}
   </section>;
 }
-export function CreditAllowances() {
-  const [params]=useSearchParams();
-  return <main className="max-w-7xl mx-auto p-6 space-y-6"><Link to="/" className="underline">Back to dashboard</Link>
-    <CreditAllowancesPanel wholesalerId={params.get('wholesaler') || undefined} /></main>;
-}
+export function CreditAllowances(){const [params]=useSearchParams();return <main className="max-w-4xl mx-auto p-6 space-y-6"><Link to="/" className="underline">Back to businesses</Link><CreditAllowancesPanel wholesalerId={params.get('wholesaler')||undefined}/></main>;}

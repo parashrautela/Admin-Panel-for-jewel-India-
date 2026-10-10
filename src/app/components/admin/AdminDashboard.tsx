@@ -1,3 +1,5 @@
+import { CreditAllowancesPanel } from './CreditAllowances';
+import { ReferralPanel } from './Referrals';
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router';
 import { Search, User, ExternalLink } from 'lucide-react';
@@ -29,6 +31,7 @@ export function AdminDashboard() {
   const [statusCounts, setStatusCounts] = useState<Record<string, number>>(DEFAULT_STATUS_COUNTS);
   const [loading, setLoading] = useState(true);
   const [showApiPanel, setShowApiPanel] = useState(false);
+  const [expandedBusiness,setExpandedBusiness]=useState<string|null>(null);
 
   const activeTab = showApiPanel ? 'api_backend' : selectedEntity;
 
@@ -108,8 +111,6 @@ export function AdminDashboard() {
             <span className="font-semibold text-xl">Admin</span>
           </div>
           <div className="flex items-center gap-4">
-            <Link to="/credits" className="text-sm underline">Credit allocations</Link>
-            <Link to="/referrals" className="text-sm underline">Referrals</Link>
             <Link to="/wishlist-controls" className="text-sm underline">Wishlist controls</Link>
             <span className="text-sm text-gray-600">Admin User</span>
             <div className="w-9 h-9 bg-black rounded-full flex items-center justify-center text-white text-sm">
@@ -120,10 +121,10 @@ export function AdminDashboard() {
       </nav>
 
       {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-8 py-10">
+      <div className="max-w-7xl mx-auto px-4 sm:px-8 py-8">
         {/* Stats Row */}
         {!showApiPanel && (
-        <div className="grid grid-cols-4 gap-6 mb-12">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-100">
             <div className="text-4xl font-light mb-2">{statusCounts.pending || 0}</div>
             <div className="text-sm text-gray-600">Pending review</div>
@@ -266,62 +267,26 @@ export function AdminDashboard() {
           ))}
         </div>
 
-        {/* Table */}
-        <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-100">
-                <th className="text-left px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider">{entityLabel}</th>
-                <th className="text-left px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Business</th>
-                <th className="text-left px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
-                <th className="text-left px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Submitted</th>
-                <th className="text-left px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                <th className="text-left px-6 py-4 text-xs font-medium text-gray-500 uppercase tracking-wider"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {loading ? (
-                <tr>
-                   <td colSpan={6} className="px-6 py-10 text-center text-gray-500">Loading {entityLabelLower}s...</td>
-                </tr>
-              ) : submissions.length === 0 ? (
-                <tr>
-                   <td colSpan={6} className="px-6 py-10 text-center text-gray-500">No {entityLabelLower}s found.</td>
-                </tr>
-              ) : submissions.map((submission) => (
-                <tr 
-                  key={submission.id}
-                  className="hover:bg-gray-50 transition-colors"
-                >
-                  <td className="px-6 py-5">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-gray-900 rounded-full flex items-center justify-center text-white text-sm font-medium">
-                        {submission.full_name?.charAt(0).toUpperCase()}
-                      </div>
-                      <span className="font-medium">{submission.full_name}</span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-5 text-gray-700">
-                    {submission.business_name}
-                    {renderInviter(submission)}
-                  </td>
-                  <td className="px-6 py-5 text-gray-600">{submission.city}, {submission.state}</td>
-                  <td className="px-6 py-5 text-gray-600 text-sm">{new Date(submission.created_at).toLocaleDateString()}</td>
-                  <td className="px-6 py-5">
-                    {getStatusBadge(submission.verification_status)}
-                  </td>
-                  <td className="px-6 py-5">
-                    <Link 
-                      to={`/review/${selectedEntity}/${submission.id}`}
-                      className="text-black hover:text-gray-600 font-medium text-sm transition-colors"
-                    >
-                      {submission.verification_status === 'verified' || submission.verification_status === 'banned' ? 'View' : 'Review'}
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="space-y-4">
+          {loading?<p className="text-gray-500 p-6">Loading businesses…</p>:submissions.length===0?<p className="text-gray-500 p-6">No businesses found.</p>:submissions.map(submission=>{
+            const key=selectedEntity+':'+submission.id;
+            const expanded=expandedBusiness===key;
+            const retailer=isRetailerRecord(submission)?submission:null;
+            return <article key={key} className="rounded-xl border border-gray-200 bg-white p-5 space-y-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div><h2 className="font-semibold text-lg">{submission.business_name||submission.full_name}</h2><p className="text-sm text-gray-500 mt-1">{submission.full_name} · {submission.city}, {submission.state}</p>{renderInviter(submission)}</div>
+                {getStatusBadge(submission.verification_status)}
+              </div>
+              <div className="flex flex-wrap gap-3 items-center">
+                <button aria-expanded={expanded} onClick={()=>setExpandedBusiness(expanded?null:key)} className="bg-gray-900 text-white rounded-lg px-4 py-2 text-sm font-medium">{expanded?'Hide credits & referrals':'Credits & referrals'}</button>
+                <Link to={`/review/${selectedEntity}/${submission.id}`} className="border rounded-lg px-4 py-2 text-sm">{submission.verification_status==='verified'?'View documents':'Review application'}</Link>
+              </div>
+              {expanded&&<div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-2">
+                <CreditAllowancesPanel wholesalerId={submission.id} businessType={selectedEntity}/>
+                <ReferralPanel wholesalerId={retailer?undefined:submission.id} retailerId={retailer?submission.id:undefined} inviterName={retailer?.inviter_business_name||undefined}/>
+              </div>}
+            </article>;
+          })}
         </div>
         </>
         )}

@@ -16,12 +16,15 @@ Deno.serve(async (req: Request) => {
   try { body = await req.json() } catch { return reply({error:'INVALID_REQUEST'},400) }
   if (!body || typeof body !== 'object' || Array.isArray(body)) return reply({error:'INVALID_REQUEST'},400)
   try {
+    const businessType=body.business_type ?? 'wholesaler'
+    if (!['wholesaler','retailer'].includes(businessType)) return reply({error:'INVALID_BUSINESS_TYPE'},400)
     const db = createClient(Deno.env.get('SUPABASE_URL')!,Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,{
       auth:{persistSession:false,autoRefreshToken:false},
     })
     if (body.action === 'list') {
       if (body.wholesaler_id != null && !uuid(body.wholesaler_id)) return reply({error:'INVALID_WHOLESALER_ID'},400)
-      const {data,error} = await db.rpc('admin_list_credit_allowances',{
+      const {data,error} = await db.rpc('admin_list_business_credit_allowances',{
+        p_business_type:businessType,
         p_search:typeof body.search === 'string' ? body.search.slice(0,100).trim() : null,
         p_page:Number.isInteger(body.page) ? Math.max(0,Math.min(body.page,10000)) : 0,
         p_page_size:Number.isInteger(body.pageSize) ? Math.max(1,Math.min(body.pageSize,100)) : 25,
@@ -40,7 +43,8 @@ Deno.serve(async (req: Request) => {
     if (!reset && (!Number.isInteger(body.daily_allowance) || body.daily_allowance<0 || body.daily_allowance>100000)) {
       return reply({error:'INVALID_ALLOWANCE',message:'Enter an integer between 0 and 100,000.'},400)
     }
-    const {data,error} = await db.rpc('admin_set_credit_allowance',{
+    const {data,error} = await db.rpc('admin_set_business_credit_allowance',{
+      p_business_type:businessType,
       p_wholesaler_id:body.wholesaler_id,p_daily_allowance:reset ? null : body.daily_allowance,
       p_reason:reason,p_expected_version:body.expected_version,p_request_key:body.request_key,p_reset:reset,
     })

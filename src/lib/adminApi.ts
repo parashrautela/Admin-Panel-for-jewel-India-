@@ -156,6 +156,7 @@ export async function saveRetailerNotes(retailerId: string, notes: string) {
 }
 
 export interface CreditAllowanceItem {
+  business_type?: ReviewEntity; business_id?: string;
   wholesaler_id: string; user_id: string; business_name: string; full_name: string; phone: string;
   verification_status: string; daily_allowance: number; is_custom: boolean; policy_version: number;
   last_reason?: string; policy_updated_at?: string; current_allowance: number | null; next_refill_at: string | null;
@@ -166,13 +167,13 @@ export interface CreditAllowanceResult {
   ok: boolean; items: CreditAllowanceItem[]; total_count: number; page: number; page_size: number;
   server_now: string; program_active: boolean; default_allowance: number;
 }
-export async function fetchCreditAllowances(search = '', page = 0, pageSize = 25, wholesalerId?: string) {
+export async function fetchCreditAllowances(search = '', page = 0, pageSize = 25, wholesalerId?: string, businessType: ReviewEntity = 'wholesaler') {
   return await adminInvoke('admin-credit-allowances', {
-    action: 'list', search, page, pageSize, wholesaler_id: wholesalerId,
+    action: 'list', search, page, pageSize, wholesaler_id: wholesalerId, business_type: businessType,
   }) as CreditAllowanceResult;
 }
 export interface AllowanceChange {
-  action: 'set_allowance' | 'reset_default'; wholesaler_id: string; daily_allowance?: number;
+  business_type?: ReviewEntity; action: 'set_allowance' | 'reset_default'; wholesaler_id: string; daily_allowance?: number;
   reason: string; expected_version: number; request_key: string;
 }
 export async function saveCreditAllowance(change: AllowanceChange) {

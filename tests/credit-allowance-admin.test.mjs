@@ -107,7 +107,7 @@ test('admin mutations and reads require server-validated admin authorization',as
 });
 test('list forwards a dedicated wholesaler ID and bounded pagination',async()=>{
   const f=await fixture('admin-credit-allowances');const res=await f.run({action:'list',wholesaler_id:id,search:'Sona',page:1,pageSize:20});
-  assert.equal(res.status,200);assert.deepEqual(JSON.parse(JSON.stringify(f.calls[0].args)),{p_search:'Sona',p_page:1,p_page_size:20,p_wholesaler_id:id});
+  assert.equal(res.status,200);assert.deepEqual(JSON.parse(JSON.stringify(f.calls[0].args)),{p_business_type:'wholesaler',p_search:'Sona',p_page:1,p_page_size:20,p_wholesaler_id:id});
   assert.equal((await f.run({action:'list',wholesaler_id:'bad-id'})).status,400);
 });
 test('set requires a valid target, amount, reason, version and stable request key',async()=>{
@@ -117,11 +117,11 @@ test('set requires a valid target, amount, reason, version and stable request ke
     const f=await fixture('admin-credit-allowances');assert.equal((await f.run({...change,...invalid})).status,400);assert.equal(f.calls.length,0);
   }
   const f=await fixture('admin-credit-allowances');assert.equal((await f.run(change)).status,200);
-  assert.deepEqual(JSON.parse(JSON.stringify(f.calls[0].args)),{p_wholesaler_id:id,p_daily_allowance:5000,p_reason:'VIP partner tier',p_expected_version:0,p_request_key:key,p_reset:false});
+  assert.deepEqual(JSON.parse(JSON.stringify(f.calls[0].args)),{p_business_type:'wholesaler',p_wholesaler_id:id,p_daily_allowance:5000,p_reason:'VIP partner tier',p_expected_version:0,p_request_key:key,p_reset:false});
 });
 test('reset uses the same versioned and idempotent mutation and cannot forge actor attribution',async()=>{
   const f=await fixture('admin-credit-allowances');assert.equal((await f.run({...change,action:'reset_default',actor:'forged'})).status,200);
-  const call=f.calls[0];assert.equal(call.name,'admin_set_credit_allowance');assert.equal(call.args.p_reset,true);assert.equal(call.args.p_daily_allowance,null);
+  const call=f.calls[0];assert.equal(call.name,'admin_set_business_credit_allowance');assert.equal(call.args.p_reset,true);assert.equal(call.args.p_daily_allowance,null);
   assert.equal(call.args.p_expected_version,0);assert.equal(call.args.p_request_key,key);assert.equal(call.args.p_actor,undefined);
 });
 test('conflicts are surfaced and backend outages fail closed without SQL details',async()=>{
@@ -144,4 +144,9 @@ test('missing credit migration reports pending deployment without exposing datab
   const f=await fixture('admin-credit-allowances',()=>({data:null,error:{code:'PGRST202',message:'private SQL schema details'}}));
   const res=await f.run({action:'list'});assert.equal(res.status,503);
   const body=await res.json();assert.equal(body.error,'CREDIT_PROGRAM_UNAVAILABLE');assert(!JSON.stringify(body).includes('private SQL'));
+});
+
+test('retailer credits use the selected store and reject unsupported business roles',async()=>{
+  const f=await fixture('admin-credit-allowances');assert.equal((await f.run({...change,business_type:'retailer'})).status,200);assert.equal(f.calls[0].args.p_business_type,'retailer');assert.equal(f.calls[0].args.p_wholesaler_id,id);
+  const bad=await fixture('admin-credit-allowances');assert.equal((await bad.run({...change,business_type:'employee'})).status,400);assert.equal(bad.calls.length,0);
 });

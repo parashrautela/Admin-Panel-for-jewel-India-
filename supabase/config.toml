@@ -10,3 +10,15 @@ verify_jwt = false
 
 [functions.admin-referrals]
 verify_jwt = false
+
+[functions.admin-verify-submission]
+verify_jwt = false
+
+[functions.admin-reject-submission]
+verify_jwt = false
+
+[functions.admin-fetch-submissions]
+verify_jwt = false
+
+[functions.admin-fetch-submission-detail]
+verify_jwt = false

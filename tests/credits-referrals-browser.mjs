@@ -1,0 +1,46 @@
+// Real review page and feature cards; isolated sample responses, no production calls.
+import assert from 'node:assert/strict';
+import {createRequire} from 'node:module';
+import {mkdtemp,writeFile,rm,mkdir} from 'node:fs/promises';
+import path from 'node:path';
+import {fileURLToPath,pathToFileURL} from 'node:url';
+const admin=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+const require=createRequire(path.join(process.env.JEWEL_BROWSER_RUNTIME||'/private/tmp/jewel-wishlist-test-runtime/node_modules','../package.json'));
+const {chromium}=require('playwright');const {createServer}=await import(pathToFileURL(path.join(admin,'node_modules/vite/dist/node/index.js')));
+const fixture=await mkdtemp('/private/tmp/jewel-simple-admin-browser-');
+await writeFile(path.join(fixture,'index.html'),'<html><body><div id="root"></div><script type="module" src="/main.jsx"></script></body></html>');
+await writeFile(path.join(fixture,'session.js'),`export async function adminInvoke(name,body){const response=await fetch('/fixture/'+name,{method:'POST',body:JSON.stringify(body)});const data=await response.json();if(!response.ok)throw Error(data.message||'Could not save.');return data;}`);
+await writeFile(path.join(fixture,'main.jsx'),`import React from 'react';import {createRoot} from 'react-dom/client';import {BrowserRouter,Routes,Route} from 'react-router';import {WholesalerReview} from ${JSON.stringify(path.join(admin,'src/app/components/admin/WholesalerReview.tsx'))};import {AdminDashboard} from ${JSON.stringify(path.join(admin,'src/app/components/admin/AdminDashboard.tsx'))};import ${JSON.stringify(path.join(admin,'src/styles/index.css'))};createRoot(document.getElementById('root')).render(<BrowserRouter><Routes><Route path="/" element={<AdminDashboard/>}/><Route path="/review/:type/:id" element={<WholesalerReview/>}/></Routes></BrowserRouter>);`);
+const server=await createServer({configFile:path.join(admin,'vite.config.ts'),root:fixture,plugins:[{name:'fixture-session',enforce:'pre',resolveId(source,importer){if((source==='./adminSession'||source.endsWith('/adminSession'))&&importer?.startsWith(admin))return path.join(fixture,'session.js');}}],resolve:{alias:[{find:'react-router',replacement:path.join(admin,'node_modules/react-router')},{find:'react',replacement:path.join(admin,'node_modules/react')},{find:'react-dom',replacement:path.join(admin,'node_modules/react-dom')}]},server:{host:'127.0.0.1',port:0,fs:{allow:[admin,fixture]}}});await server.listen();
+const browser=await chromium.launch({executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true});const page=await browser.newPage({viewport:{width:1440,height:1100}});const errors=[];page.on('pageerror',e=>errors.push(e.message));const calls=[];
+const ws='11111111-1111-4111-8111-111111111111',ret='22222222-2222-4222-8222-222222222222';
+let version=0,allowance=2000,isCustom=false;
+await page.route('**/fixture/*',route=>{
+ const name=new URL(route.request().url()).pathname.split('/').at(-1),body=route.request().postDataJSON();calls.push({name,body});
+ const deadline='2026-10-11T10:00:00Z',isRetailer=body.table==='retailers';let data;
+ if(name==='admin-fetch-status-counts')data={verified:1};
+ else if(name==='admin-fetch-submissions')data=[{id:isRetailer?ret:ws,full_name:'Demo Owner',business_name:isRetailer?'Demo Retail Store':'Demo Wholesale Business',verification_status:'verified',created_at:'2026-10-10T00:00:00Z',city:'Jaipur',state:'Rajasthan',...(isRetailer?{referred_by:ws,inviter_business_name:'Demo Wholesale Business',referral_code:'DEMO-ONLY'}:{})}];
+ else if(name==='admin-fetch-submission-detail')data={id:isRetailer?ret:ws,full_name:'Demo Owner',business_name:isRetailer?'Demo Retail Store':'Demo Wholesale Business',verification_status:'verified',created_at:'2026-10-10T00:00:00Z',city:'Jaipur',state:'Rajasthan',rejected_documents:[],...(isRetailer?{referred_by:ws,inviter_business_name:'Demo Wholesale Business',referral_code:'DEMO-ONLY'}:{})};
+ else if(name==='admin-credit-allowances'&&body.action==='list')data={ok:true,items:[{wholesaler_id:body.wholesaler_id,user_id:'demo-owner',business_name:'Demo Business',verification_status:'verified',daily_allowance:allowance,is_custom:isCustom,policy_version:version,current_allowance:2000,next_refill_at:deadline,recurring_available:1700,gift_available:1000,paid_available:68,available:2768}],total_count:1,program_active:true,default_allowance:2000};
+ else if(name==='admin-credit-allowances'){assert.equal(body.expected_version,version);version++;allowance=body.action==='reset_default'?2000:body.daily_allowance;isCustom=body.action!=='reset_default';data={ok:true,next_allowance:allowance,version,effective_at:deadline,program_active:true};}
+ else if(name==='admin-referrals')data={links:[{id:'demo-referral',code:'DEMO-ONLY',wholesaler_id:ws,retailer_id:ret,inviter_name:'Demo Wholesale Business',retailer_name:'Demo Retail Store',retailer_status:'pending',status:'pending',policy_version:1,gift_credits:1000,extra_credits:0,funding_state:'reserved',created_at:'2026-10-10T00:00:00Z'}],count:1};
+ else data={success:true};return route.fulfill({json:data});
+});
+try{
+ const base=`http://127.0.0.1:${server.httpServer.address().port}`;
+ await page.goto(base+'/review/wholesaler/'+ws);await page.getByRole('button',{name:'Change credits',exact:true}).waitFor();await page.getByText('Waiting for verification',{exact:true}).waitFor();
+ assert.equal(await page.getByRole('table').count(),0);assert.equal(await page.getByLabel('Wholesaler ID').count(),0);assert.equal(await page.getByRole('dialog').count(),0);
+ await page.getByRole('button',{name:'Change credits',exact:true}).click();await page.getByLabel('Credits per 24 hours',{exact:true}).fill('3500');await page.getByLabel('Reason',{exact:true}).fill('Higher daily usage');await page.getByRole('button',{name:'Save credits',exact:true}).click();await page.getByRole('status').filter({hasText:'Saved. 3,500'}).waitFor();
+ assert.equal(calls.find(c=>c.body.action==='set_allowance').body.business_type,'wholesaler');
+ await page.goto(base+'/review/retailer/'+ret);await page.getByRole('button',{name:'Change credits',exact:true}).waitFor();await page.getByRole('region',{name:'Business referrals'}).getByText('Demo Wholesale Business',{exact:true}).waitFor();
+ assert.equal(calls.filter(c=>c.body.business_type==='retailer').at(-1).body.wholesaler_id,ret);
+ await page.getByRole('button',{name:'Pause credits',exact:true}).click();assert.equal(await page.getByLabel('Credits per 24 hours',{exact:true}).inputValue(),'0');await page.getByLabel('Reason',{exact:true}).fill('Pause recurring grants');await page.getByRole('button',{name:'Save credits',exact:true}).click();await page.getByRole('status').filter({hasText:'Saved. Credits will pause'}).waitFor();
+ await page.getByRole('button',{name:'Use default (2,000)',exact:true}).click();await page.getByLabel('Reason',{exact:true}).fill('Return to default');await page.getByRole('button',{name:'Save credits',exact:true}).click();await page.getByRole('status').filter({hasText:'Saved. 2,000'}).waitFor();
+ assert.equal(calls.filter(c=>c.body.action==='reset_default').at(-1).body.business_type,'retailer');
+ await page.getByRole('region',{name:'Business credits'}).getByRole('button',{name:'Change credits',exact:true}).waitFor();
+ const dir=process.env.JEWEL_SCREENSHOTS||'/private/tmp/jewel-simple-admin-screenshots';await mkdir(dir,{recursive:true});await page.screenshot({path:path.join(dir,'retailer-desktop.png'),fullPage:false});
+ await page.setViewportSize({width:390,height:900});assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await page.screenshot({path:path.join(dir,'retailer-mobile.png'),fullPage:false});
+ await page.setViewportSize({width:1440,height:1100});await page.goto(base+'/');await page.getByRole('button',{name:'Credits & referrals',exact:true}).waitFor();await page.getByRole('button',{name:'Credits & referrals',exact:true}).click();await page.getByRole('button',{name:'Change credits',exact:true}).waitFor();assert.equal(page.url(),base+'/');
+ await page.getByRole('button',{name:'Retailers',exact:true}).click();await page.getByRole('heading',{name:'Demo Retail Store',exact:true}).waitFor();await page.getByRole('button',{name:'Credits & referrals',exact:true}).click();await page.getByRole('button',{name:'Change credits',exact:true}).waitFor();assert.equal(calls.filter(c=>c.body.action==='list'&&c.name==='admin-credit-allowances').at(-1).body.business_type,'retailer');await page.screenshot({path:path.join(dir,'retailer-dashboard.png'),fullPage:false});
+ assert.deepEqual(errors,[]);console.log('PASS real wholesaler/retailer review cards: credits, pause, reset, referral status, desktop/mobile, no runtime errors');console.log('Screenshots:',dir);
+}finally{await browser.close();await server.close();await rm(fixture,{recursive:true,force:true});}

@@ -13,7 +13,6 @@ import {
   requestResubmissionForSubmission,
   saveSubmissionNotes,
   isRetailerRecord,
-  inviterLabel,
   NO_INVITER_MESSAGE,
   type ReviewEntity,
   type SubmissionRecord,
@@ -144,9 +143,9 @@ export function WholesalerReview() {
   return (
     <div className="min-h-screen bg-white">
       <div className="max-w-7xl mx-auto px-8 py-10">
-        <div className="grid grid-cols-3 gap-10">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left Column - Submission Info */}
-          <div className="col-span-2">
+          <div className="lg:col-span-2">
             {/* Header */}
             <Link to="/" className="inline-flex items-center gap-2 text-black hover:text-gray-600 mb-6 font-medium">
               <ArrowLeft className="w-4 h-4" />
@@ -154,32 +153,19 @@ export function WholesalerReview() {
             </Link>
 
             <div className="mb-10">
-              <h1 className="text-3xl font-light mb-3">{submission.full_name}</h1>
+              <h1 className="text-3xl font-light mb-3">{submission.business_name || submission.full_name}</h1>
+              <p className="text-sm text-gray-500 mb-3">{submission.full_name}</p>
               <div className="flex items-center gap-4 text-sm text-gray-600">
                 <span>{new Date(submission.created_at).toLocaleDateString()}</span>
                 <span>•</span>
-                <span className="truncate max-w-[150px]">{submission.id}</span>
                 <span className="ml-2">{getStatusBadge(submission.verification_status)}</span>
               </div>
-              {retailer && (
-                <div className="mt-3 text-sm">
-                  {retailer.referred_by ? (
-                    <span className="text-gray-600">{inviterLabel(retailer)}</span>
-                  ) : (
-                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-amber-50 text-amber-800">
-                      {inviterLabel(retailer)}
-                    </span>
-                  )}
-                </div>
-              )}
             </div>
 
-            {!retailer && (
-              <div className="mb-6">
-                <CreditAllowancesPanel wholesalerId={submission.id} />
-              </div>
-            )}
-            <div className="mb-6"><ReferralPanel wholesalerId={retailer ? undefined : submission.id} retailerId={retailer ? submission.id : undefined} /></div>
+            <div className="space-y-4 mb-6">
+              <CreditAllowancesPanel wholesalerId={submission.id} businessType={reviewType} />
+              <ReferralPanel wholesalerId={retailer ? undefined : submission.id} retailerId={retailer ? submission.id : undefined} inviterName={retailer?.inviter_business_name || undefined} />
+            </div>
             {/* Personal Details */}
             <div className="bg-white rounded-lg border border-gray-100 shadow-sm p-8 mb-6">
               <h2 className="text-lg font-medium mb-6">Personal Details</h2>
