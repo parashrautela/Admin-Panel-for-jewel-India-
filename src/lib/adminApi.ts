@@ -160,7 +160,7 @@ export interface CreditAllowanceItem {
   wholesaler_id: string; user_id: string; business_name: string; full_name: string; phone: string;
   verification_status: string; daily_allowance: number; is_custom: boolean; policy_version: number;
   last_reason?: string; policy_updated_at?: string; current_allowance: number | null; next_refill_at: string | null;
-  recurring_available: number; gift_available: number; paid_available: number; available: number;
+  admin_available?: number; recurring_available: number; gift_available: number; paid_available: number; available: number;
   lifetime_spent: number; lifetime_granted: number;
 }
 export interface CreditAllowanceResult {
@@ -180,4 +180,11 @@ export async function saveCreditAllowance(change: AllowanceChange) {
   return await adminInvoke('admin-credit-allowances', change) as {
     ok: boolean; version: number; effective_at: string; next_allowance: number; program_active: boolean; replayed?: boolean;
   };
+}
+
+export interface ImmediateCreditChange {
+  action: 'grant_now'; business_type: ReviewEntity; wholesaler_id: string; credits: number; reason: string; request_key: string;
+}
+export async function giveBusinessCredits(change: ImmediateCreditChange) {
+  return await adminInvoke('admin-credit-allowances',change) as {ok:boolean;granted:number;available:number;replayed:boolean};
 }

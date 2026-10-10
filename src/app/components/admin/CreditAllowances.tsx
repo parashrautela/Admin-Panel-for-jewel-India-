@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
-import { fetchCreditAllowances, saveCreditAllowance } from '../../../lib/adminApi';
-import type { AllowanceChange, CreditAllowanceItem, CreditAllowanceResult, ReviewEntity } from '../../../lib/adminApi';
+import { fetchCreditAllowances, saveCreditAllowance, giveBusinessCredits } from '../../../lib/adminApi';
+import type { AllowanceChange, ImmediateCreditChange, CreditAllowanceItem, CreditAllowanceResult, ReviewEntity } from '../../../lib/adminApi';
 const indiaTime = (value: string) => new Date(value).toLocaleString('en-IN', {timeZone:'Asia/Kolkata',dateStyle:'medium',timeStyle:'short'}) + ' IST';
 
 export function CreditAllowancesPanel({wholesalerId,businessType='wholesaler'}: {wholesalerId?: string;businessType?:ReviewEntity}) {
   const [result,setResult]=useState<CreditAllowanceResult|null>(null),[page,setPage]=useState(0),[search,setSearch]=useState('');
   const [busy,setBusy]=useState(true),[error,setError]=useState(''),[revision,setRevision]=useState(0);
-  const [editor,setEditor]=useState<{item:CreditAllowanceItem;reset:boolean}|null>(null);
+  const [editor,setEditor]=useState<{item:CreditAllowanceItem;reset:boolean;grant?:boolean}|null>(null);
   const [amount,setAmount]=useState(''),[reason,setReason]=useState(''),[saving,setSaving]=useState(false),[saveError,setSaveError]=useState(''),[success,setSuccess]=useState('');
-  const request=useRef<AllowanceChange|null>(null),inFlight=useRef(false);
+  const request=useRef<AllowanceChange|ImmediateCreditChange|null>(null),inFlight=useRef(false);
   useEffect(()=>{setResult(null);setEditor(null);setSuccess('');request.current=null;},[wholesalerId,businessType]);
   useEffect(()=>{
     let active=true;setBusy(true);
@@ -21,36 +21,36 @@ export function CreditAllowancesPanel({wholesalerId,businessType='wholesaler'}: 
     },200);
     return ()=>{active=false;clearTimeout(timer);};
   },[search,page,revision,wholesalerId,businessType]);
-  function open(item:CreditAllowanceItem,reset=false,pause=false){
-    request.current=null;setEditor({item,reset});setAmount(pause?'0':String(item.daily_allowance));setReason('');setSaveError('');setSuccess('');
+  function open(item:CreditAllowanceItem,reset=false,pause=false,grant=false){
+    request.current=null;setEditor({item,reset,grant});setAmount(grant?'':pause?'0':String(item.daily_allowance));setReason('');setSaveError('');setSuccess('');
   }
   async function save(){
     if(!editor||inFlight.current)return;
     const value=Number(amount);
-    if(!editor.reset&&(!amount.trim()||!Number.isInteger(value)||value<0||value>100000)){setSaveError('Enter a whole number from 0 to 100,000.');return;}
+    if(!editor.reset&&(!amount.trim()||!Number.isInteger(value)||value<(editor.grant?1:0)||value>100000)){setSaveError(editor.grant?'Enter a whole number from 1 to 100,000.':'Enter a whole number from 0 to 100,000.');return;}
     if(!reason.trim()||reason.trim().length>500){setSaveError('Add a short reason for this change.');return;}
-    const draft={business_type:businessType,action:editor.reset?'reset_default' as const:'set_allowance' as const,wholesaler_id:editor.item.wholesaler_id,daily_allowance:editor.reset?undefined:value,reason:reason.trim(),expected_version:editor.item.policy_version};
+    const draft=editor.grant?{business_type:businessType,action:'grant_now' as const,wholesaler_id:editor.item.wholesaler_id,credits:value,reason:reason.trim()}:{business_type:businessType,action:editor.reset?'reset_default' as const:'set_allowance' as const,wholesaler_id:editor.item.wholesaler_id,daily_allowance:editor.reset?undefined:value,reason:reason.trim(),expected_version:editor.item.policy_version};
     if(!request.current||JSON.stringify({...request.current,request_key:undefined})!==JSON.stringify(draft))request.current={...draft,request_key:crypto.randomUUID()};
     inFlight.current=true;setSaving(true);setSaveError('');
     try{
-      const data=await saveCreditAllowance(request.current!);
-      setSuccess(data.next_allowance===0?'Saved. Credits will pause after the current allowance ends.':`Saved. ${data.next_allowance.toLocaleString('en-IN')} credits will be available at the next refill.`);
+      if(editor.grant){const data=await giveBusinessCredits(request.current! as ImmediateCreditChange);setSuccess(`Sent. ${data.granted.toLocaleString('en-IN')} credits are available now.`);}else{const data=await saveCreditAllowance(request.current! as AllowanceChange);
+      setSuccess(data.next_allowance===0?'Saved. Credits will pause after the current allowance ends.':`Saved. ${data.next_allowance.toLocaleString('en-IN')} credits will be available at the next refill.`);}
       setEditor(null);setRevision(n=>n+1);request.current=null;
     }catch(err){setSaveError(err instanceof Error?err.message:'Could not save. Please retry.');}
     finally{inFlight.current=false;setSaving(false);}
   }
   const editForm=editor&&<form onSubmit={e=>{e.preventDefault();void save();}} className="rounded-lg bg-gray-50 border border-gray-200 p-4 space-y-3" aria-label="Change credit allowance">
-    <h3 className="font-semibold">{editor.reset?'Use default credits':'Change credits'}</h3>
+    <h3 className="font-semibold">{editor.grant?'Give credits now':editor.reset?'Use default credits':'Change credits'}</h3>
     {!wholesalerId&&<p>{editor.item.business_name}</p>}
-    {editor.reset?<p>{result?.default_allowance.toLocaleString()} credits every 24 hours.</p>:<label className="block text-sm font-medium">Credits per 24 hours<input required type="number" min="0" max="100000" step="1" value={amount} disabled={saving} onChange={e=>setAmount(e.target.value)} className="block mt-1 border border-gray-300 p-2 rounded w-full max-w-xs bg-white"/></label>}
-    <label className="block text-sm font-medium">Reason<input required placeholder="Why are you changing this?" maxLength={500} value={reason} disabled={saving} onChange={e=>setReason(e.target.value)} className="block mt-1 border border-gray-300 p-2 rounded w-full bg-white"/></label>
-    <p className="text-sm text-gray-600">Starts {editor.item.next_refill_at?`at the next refill: ${indiaTime(editor.item.next_refill_at)}`:'on the next wallet visit'}. Set 0 to pause. Current credits stay available until their expiry.</p>
+    {editor.reset?<p>{result?.default_allowance.toLocaleString()} credits every 24 hours.</p>:<label className="block text-sm font-medium">{editor.grant?'Credits to send now':'Credits per 24 hours'}<input required type="number" min={editor.grant?1:0} max="100000" step="1" value={amount} disabled={saving||(!!editor.grant&&!!request.current)} onChange={e=>setAmount(e.target.value)} className="block mt-1 border border-gray-300 p-2 rounded w-full max-w-xs bg-white"/></label>}
+    <label className="block text-sm font-medium">Reason<input required placeholder="Why are you changing this?" maxLength={500} value={reason} disabled={saving||(!!editor.grant&&!!request.current)} onChange={e=>setReason(e.target.value)} className="block mt-1 border border-gray-300 p-2 rounded w-full bg-white"/></label>
+    <p className="text-sm text-gray-600">{editor.grant?'Adds a one-time bonus immediately. It stays available until spent. Your 24-hour allowance and refill time stay the same.':<>Starts {editor.item.next_refill_at?`at the next refill: ${indiaTime(editor.item.next_refill_at)}`:'on the next wallet visit'}. Set 0 to pause. Current credits stay available until their expiry.</>}</p>
     {saveError&&<p role="alert" className="text-red-700 text-sm">{saveError}</p>}
-    <div className="flex gap-3"><button disabled={saving} className="bg-gray-900 text-white rounded-lg px-4 py-2 text-sm font-medium">{saving?'Saving…':'Save credits'}</button><button type="button" disabled={saving} onClick={()=>setEditor(null)} className="border rounded-lg px-4 py-2 text-sm">Cancel</button></div>
+    <div className="flex gap-3"><button disabled={saving} className="bg-gray-900 text-white rounded-lg px-4 py-2 text-sm font-medium">{saving?'Saving…':editor.grant?(request.current?'Retry same send':'Send credits now'):'Save credits'}</button><button type="button" disabled={saving} onClick={()=>{setEditor(null);setRevision(n=>n+1);}} className="border rounded-lg px-4 py-2 text-sm">Cancel</button></div>
   </form>;
   function actions(item:CreditAllowanceItem){
     const disabled=saving||item.verification_status!=='verified'||!item.user_id;
-    return <div className="flex flex-wrap items-center gap-3"><button onClick={()=>open(item)} disabled={disabled} className="bg-gray-900 text-white rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-40">Change credits</button>
+    return <div className="flex flex-wrap items-center gap-3"><button onClick={()=>open(item,false,false,true)} disabled={disabled} className="bg-emerald-800 text-white rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-40">Give credits now</button><button onClick={()=>open(item)} disabled={disabled} className="bg-gray-900 text-white rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-40">Change credits</button>
       {item.daily_allowance>0&&<button onClick={()=>open(item,false,true)} disabled={disabled} className="border rounded-lg px-3 py-2 text-sm disabled:opacity-40">Pause credits</button>}
       {item.is_custom&&<button onClick={()=>open(item,true)} disabled={disabled} className="text-sm underline disabled:opacity-40">Use default ({result?.default_allowance.toLocaleString()})</button>}
       {item.verification_status!=='verified'&&<p className="text-sm text-gray-500">Verify this business to change its credits.</p>}
@@ -71,7 +71,7 @@ export function CreditAllowancesPanel({wholesalerId,businessType='wholesaler'}: 
       </div>
       {item.current_allowance!=null&&item.current_allowance!==item.daily_allowance&&<p className="text-sm text-gray-600">The current allowance is {item.current_allowance.toLocaleString()}. Your change starts at the next refill.</p>}
       {!editor&&actions(item)}
-      <details className="text-sm text-gray-500"><summary className="cursor-pointer">Balance details</summary><p className="mt-2">Recurring: {item.recurring_available.toLocaleString()} · Gifts: {item.gift_available.toLocaleString()} · Purchased: {item.paid_available.toLocaleString()}</p>{businessType==='retailer'&&<p className="mt-1">Staff share this store’s credits.</p>}</details>
+      <details className="text-sm text-gray-500"><summary className="cursor-pointer">Balance details</summary><p className="mt-2">Admin bonus: {(item.admin_available??0).toLocaleString()} · Recurring: {item.recurring_available.toLocaleString()} · Gifts: {item.gift_available.toLocaleString()} · Purchased: {item.paid_available.toLocaleString()}</p>{businessType==='retailer'&&<p className="mt-1">Staff share this store’s credits.</p>}</details>
     </>:null}
     {!wholesalerId&&<>
       <input aria-label="Search wholesalers" placeholder="Search business name" value={search} onChange={e=>{setSearch(e.target.value);setPage(0);}} className="border rounded-lg p-2 w-full max-w-md"/>

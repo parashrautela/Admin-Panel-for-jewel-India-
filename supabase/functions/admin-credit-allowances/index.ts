@@ -33,6 +33,15 @@ Deno.serve(async (req: Request) => {
       if (error) throw error
       return reply(data,data?.ok ? 200 : 503)
     }
+    if (body.action === 'grant_now') {
+      if (!uuid(body.wholesaler_id) || !uuid(body.request_key)) return reply({error:'INVALID_REQUEST'},400)
+      const reason=typeof body.reason==='string'?body.reason.trim():''
+      if (!reason || reason.length>500) return reply({error:'REASON_REQUIRED',message:'Enter a reason of 1–500 characters.'},400)
+      if (!Number.isInteger(body.credits) || body.credits<1 || body.credits>100000) return reply({error:'INVALID_ALLOWANCE',message:'Enter a whole number between 1 and 100,000.'},400)
+      const {data,error}=await db.rpc('admin_grant_business_credits',{p_business_type:businessType,p_business_id:body.wholesaler_id,p_credits:body.credits,p_reason:reason,p_request_key:body.request_key})
+      if(error)throw error
+      return reply(data,data?.ok?200:data?.error==='IDEMPOTENCY_CONFLICT'?409:400)
+    }
     if (body.action !== 'set_allowance' && body.action !== 'reset_default') return reply({error:'INVALID_ACTION'},400)
     if (!uuid(body.wholesaler_id)) return reply({error:'INVALID_WHOLESALER_ID'},400)
     if (!uuid(body.request_key)) return reply({error:'INVALID_REQUEST_KEY'},400)

@@ -150,3 +150,13 @@ test('retailer credits use the selected store and reject unsupported business ro
   const f=await fixture('admin-credit-allowances');assert.equal((await f.run({...change,business_type:'retailer'})).status,200);assert.equal(f.calls[0].args.p_business_type,'retailer');assert.equal(f.calls[0].args.p_wholesaler_id,id);
   const bad=await fixture('admin-credit-allowances');assert.equal((await bad.run({...change,business_type:'employee'})).status,400);assert.equal(bad.calls.length,0);
 });
+
+test('immediate credits require admin auth, a positive amount, reason and replay key for either business role',async()=>{
+ const send={action:'grant_now',business_type:'retailer',wholesaler_id:id,credits:700,reason:'Immediate support',request_key:key};
+ for(const password of [null,'wrong-password']) { const f=await fixture('admin-credit-allowances');assert.equal((await f.run(send,password)).status,401);assert.equal(f.calls.length,0); }
+ for(const invalid of [{credits:0},{credits:-1},{credits:100001},{credits:1.5},{credits:'700'},{reason:' '},{request_key:'bad'},{wholesaler_id:'bad'},{business_type:'employee'}]){
+  const f=await fixture('admin-credit-allowances');assert.equal((await f.run({...send,...invalid})).status,400);assert.equal(f.calls.length,0);
+ }
+ for(const business_type of ['wholesaler','retailer']){const f=await fixture('admin-credit-allowances');assert.equal((await f.run({...send,business_type})).status,200);assert.equal(f.calls[0].name,'admin_grant_business_credits');assert.deepEqual(JSON.parse(JSON.stringify(f.calls[0].args)),{p_business_type:business_type,p_business_id:id,p_credits:700,p_reason:'Immediate support',p_request_key:key});}
+ const conflict=await fixture('admin-credit-allowances',()=>({data:{ok:false,error:'IDEMPOTENCY_CONFLICT'},error:null}));assert.equal((await conflict.run(send)).status,409);
+});

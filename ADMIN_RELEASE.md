@@ -20,3 +20,9 @@ The six credit/referral/report/review Edge handlers use their existing per-funct
 - Live invitation readiness checks pass, including daily/referral activation and new-payment disablement.
 
 `vercel.json` builds the repository-root Vite application and supports SPA links. Publish to production branch `main` and verify the exact Vercel deployment. The public client contains only public Supabase configuration. Full authenticated admin UI verification requires an admin session; browser fixtures exercise the controls without adding a production authentication bypass.
+
+## Immediate credits follow-up
+
+**Give credits now** sends a one-time, non-expiring bonus to a verified wholesaler or retailer immediately. The amount (1–100,000) and reason are required. This does not change recurring allowances or refill anchors. SQL stores a dedicated admin bonus lot, ledger entry and immutable audit record; request keys prevent duplicate delivery across concurrent retries. The bonus participates in wallet totals, spend/refund accounting and retailer staff sharing, with a separate balance subtotal.
+
+Canonical migration 026 is required before deploying the updated admin-credit-allowances handler. A protected backup and rolled-back production rehearsal confirmed correct immediate balances and unchanged cycle counts for all 16 currently verified businesses. Local accounting tests pass 21 grouped scenarios and the existing 27 referral/paid scenarios; admin tests pass 14 cases. The maintained browser fixture covers a 700-credit immediate send without changing the recurring allowance or policy version.
