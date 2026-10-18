@@ -235,3 +235,22 @@ test('admin-feature-flags: action catalog_set calls admin_set_catalog', async ()
   assert.equal(rpcCall.args.p_key, 'orders');
   assert.equal(rpcCall.args.p_mode, 'enforce');
 });
+
+test('admin-feature-flags: action bulk_set validates inputs and calls admin_bulk_set_features', async () => {
+  const f = await fixture('admin-feature-flags');
+  const res = await f.run({
+    action: 'bulk_set',
+    wholesaler_id: wholesalerId,
+    reason: 'Account suspension',
+    changes: [
+      { feature_key: 'chamak', enabled: false, expected_version: 1 },
+      { feature_key: 'orders', enabled: false, expected_version: 0 },
+    ],
+  });
+
+  assert.equal(res.status, 200);
+  const rpcCall = f.calls.find((c) => c.name === 'admin_bulk_set_features');
+  assert.ok(rpcCall);
+  assert.equal(rpcCall.args.p_reason, 'Account suspension');
+  assert.equal(rpcCall.args.p_changes.length, 2);
+});

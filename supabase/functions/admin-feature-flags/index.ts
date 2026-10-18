@@ -167,32 +167,23 @@ Deno.serve(async (req: Request) => {
       if (!Array.isArray(body.changes) || body.changes.length === 0) {
         return reply({ error: 'INVALID_CHANGES', message: 'Changes array is required.' }, 400)
       }
+      const reason = (typeof body.reason === 'string' && body.reason.trim()) || (typeof body.changes[0]?.reason === 'string' && body.changes[0].reason.trim()) || ''
+      if (!reason || reason.length > 500) {
+        return reply({ error: 'INVALID_REASON', message: 'Reason of 1–500 characters is required.' }, 400)
+      }
       const userId = await resolveWholesalerUserId(body.wholesaler_id)
       if (!userId) {
         return reply({ error: 'NOT_A_WHOLESALER', message: 'Wholesaler not found.' }, 404)
       }
 
-      const results = []
-      for (const item of body.changes) {
-        const reason = typeof item.reason === 'string' ? item.reason.trim() : ''
-        if (!reason || reason.length > 500) {
-          return reply({ error: 'INVALID_REASON', message: 'Reason invalid for feature ' + item.feature_key }, 400)
-        }
-        const { data, error } = await db.rpc('admin_set_feature', {
-          p_wholesaler_user_id: userId,
-          p_key: item.feature_key,
-          p_enabled: Boolean(item.enabled),
-          p_reason: reason,
-          p_actor: 'admin-password',
-          p_expected_version: item.expected_version ?? null,
-        })
-        if (error) throw error
-        if (!data?.ok) {
-          return reply(data, data?.error === 'VERSION_CONFLICT' ? 409 : 400)
-        }
-        results.push(data)
-      }
-      return reply({ ok: true, results }, 200)
+      const { data, error } = await db.rpc('admin_bulk_set_features', {
+        p_wholesaler_user_id: userId,
+        p_changes: body.changes,
+        p_reason: reason,
+        p_actor: 'admin-password',
+      })
+      if (error) throw error
+      return reply(data, data?.ok ? 200 : data?.error === 'VERSION_CONFLICT' ? 409 : 400)
     }
 
     // ACTION: audit
