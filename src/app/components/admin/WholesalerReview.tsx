@@ -1,5 +1,6 @@
 import { CreditAllowancesPanel } from './CreditAllowances';
 import { ReferralPanel } from './Referrals';
+import { FeatureAccessPanel } from './FeatureAccess';
 import { useState, useEffect } from 'react';
 import { Link, useParams, useNavigate } from 'react-router';
 import { ArrowLeft, ExternalLink, Check, Pause, RotateCcw, X, Ban, AlertCircle } from 'lucide-react';
@@ -165,6 +166,9 @@ export function WholesalerReview() {
             <div className="space-y-4 mb-6">
               <CreditAllowancesPanel wholesalerId={submission.id} businessType={reviewType} />
               <ReferralPanel wholesalerId={retailer ? undefined : submission.id} retailerId={retailer ? submission.id : undefined} inviterName={retailer?.inviter_business_name || undefined} />
+              {reviewType === 'wholesaler' && (
+                <FeatureAccessPanel wholesalerId={submission.id} />
+              )}
             </div>
             {/* Personal Details */}
             <div className="bg-white rounded-lg border border-gray-100 shadow-sm p-8 mb-6">

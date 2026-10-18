@@ -1,4 +1,5 @@
 import { adminInvoke } from './adminSession';
+import { supabase } from './supabase';
 
 export type ReviewEntity = 'wholesaler' | 'retailer';
 export type WholesalerStatus = 'pending' | 'verified' | 'rejected' | 'on_hold' | 'resubmission_required' | 'banned';
@@ -187,4 +188,105 @@ export interface ImmediateCreditChange {
 }
 export async function giveBusinessCredits(change: ImmediateCreditChange) {
   return await adminInvoke('admin-credit-allowances',change) as {ok:boolean;granted:number;available:number;replayed:boolean};
+
+// Feature Flags Admin API
+export interface FeatureFlagItem {
+  key: string;
+  label: string;
+  description: string;
+  parent_key: string | null;
+  default_enabled: boolean;
+  enforcement_mode: 'off' | 'log' | 'enforce';
+  override_enabled: boolean | null;
+  effective_enabled: boolean;
+  reason: string | null;
+  updated_by: string | null;
+  updated_at: string | null;
+  version: number;
+  parent_locked: boolean;
+}
+
+export interface FeatureFlagsResult {
+  ok: boolean;
+  features: FeatureFlagItem[];
+}
+
+export async function fetchWholesalerFeatureFlags(wholesalerId: string) {
+  return await adminInvoke('admin-feature-flags', {
+    action: 'list',
+    wholesaler_id: wholesalerId,
+  }) as FeatureFlagsResult;
+}
+
+export async function setWholesalerFeatureFlag(
+  wholesalerId: string,
+  featureKey: string,
+  enabled: boolean,
+  reason: string,
+  expectedVersion?: number
+) {
+  return await adminInvoke('admin-feature-flags', {
+    action: 'set',
+    wholesaler_id: wholesalerId,
+    feature_key: featureKey,
+    enabled,
+    reason,
+    expected_version: expectedVersion,
+  }) as { ok: boolean; version: number };
+}
+
+export async function resetWholesalerFeatureFlag(
+  wholesalerId: string,
+  featureKey: string,
+  reason: string,
+  expectedVersion?: number
+) {
+  return await adminInvoke('admin-feature-flags', {
+    action: 'reset',
+    wholesaler_id: wholesalerId,
+    feature_key: featureKey,
+    reason,
+    expected_version: expectedVersion,
+  }) as { ok: boolean; version: number };
+}
+
+export async function bulkSetWholesalerFeatureFlags(
+  wholesalerId: string,
+  changes: Array<{ feature_key: string; enabled: boolean; reason: string; expected_version?: number }>
+) {
+  return await adminInvoke('admin-feature-flags', {
+    action: 'bulk_set',
+    wholesaler_id: wholesalerId,
+    changes,
+  }) as { ok: boolean; results: any[] };
+}
+
+export async function fetchFeatureFlagAudit(wholesalerId?: string, page = 0, pageSize = 25) {
+  return await adminInvoke('admin-feature-flags', {
+    action: 'audit',
+    wholesaler_id: wholesalerId,
+    page,
+    pageSize,
+  }) as { ok: boolean; rows: any[]; count: number; page: number; pageSize: number };
+}
+
+export async function fetchFeatureCatalog() {
+  return await adminInvoke('admin-feature-flags', {
+    action: 'catalog_list',
+  }) as { ok: boolean; catalog: any[] };
+}
+
+export async function setFeatureCatalog(
+  featureKey: string,
+  defaultEnabled?: boolean,
+  enforcementMode?: string,
+  reason: string = 'Admin catalog update'
+) {
+  return await adminInvoke('admin-feature-flags', {
+    action: 'catalog_set',
+    feature_key: featureKey,
+    default_enabled: defaultEnabled,
+    enforcement_mode: enforcementMode,
+    reason,
+  }) as { ok: boolean };
 }
