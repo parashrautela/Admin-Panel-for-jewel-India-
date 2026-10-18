@@ -8,7 +8,7 @@ const require=createRequire(import.meta.url);const {transform}=require('esbuild'
 async function fixture(name) {
  let handler;const calls=[];
  const query=new Proxy({}, {get:(_,key)=>key==='then'?(resolve=>resolve({data:[],error:null,count:0})):(...args)=>{calls.push({method:key,args});return query;}});
- const context=vm.createContext({Response,console,crypto:webcrypto,Deno:{env:{get:key=>key==='ADMIN_PASSWORD'?'server-password':'test'},serve:fn=>{handler=fn;}}});
+ const context=vm.createContext({Response,console,crypto:webcrypto,TextEncoder,Deno:{env:{get:key=>key==='ADMIN_PASSWORD'?'server-password':'test'},serve:fn=>{handler=fn;}}});
  const create=new vm.SyntheticModule(['createClient'],function(){this.setExport('createClient',()=>({from:table=>{calls.push({table});return query;},rpc:async(name,args)=>{calls.push({name,args});return {data:{ok:true},error:null};}}));},{context});
  const serve=new vm.SyntheticModule(['serve'],function(){this.setExport('serve',fn=>{handler=fn;});},{context});
  const auth= new vm.SourceTextModule((await transform(await readFile(new URL('../supabase/functions/_shared/adminAuth.ts',import.meta.url),'utf8'),{loader:'ts',format:'esm'})).code,{context});await auth.link(()=>{throw Error('unexpected import');});

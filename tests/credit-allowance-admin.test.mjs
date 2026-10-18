@@ -27,6 +27,7 @@ async function fixture(name, response) {
     Response,
     console,
     crypto: webcrypto,
+    TextEncoder,
     Deno: {
       env: { get: (key) => (key === 'ADMIN_PASSWORD' ? 'server-password' : 'test') },
       serve: (fn) => {
